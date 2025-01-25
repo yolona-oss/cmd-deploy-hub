@@ -1,1 +1,2 @@
-create live log: just html + js that poll from server
+- create live log: just html + js that poll from server
+- integrate user context state value to set availability to execute concreet commands

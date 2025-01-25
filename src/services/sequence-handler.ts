@@ -93,7 +93,7 @@ export class SequenceHandler {
         }
 
         if (!handlingSeq) {
-            return "No such command."
+            return
         }
 
         const curHandlingSeq = this.handlingSeq.find((item) => item.target === command)!

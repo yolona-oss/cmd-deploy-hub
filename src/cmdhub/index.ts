@@ -34,7 +34,7 @@ export default async function(uiName: AvailableUIsType, cmdHandler: CommandHandl
     }
 
     log.echo("Starting app...")
-    const app = new Application("Sneja", curUI)
+    const app = new Application("cmd-deploy-hub", curUI)
 
     if (uiName === "telegram") {
         log.echo("Creating lock file for UI...")

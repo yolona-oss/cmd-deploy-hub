@@ -7,3 +7,8 @@ export const DefaultSeqCommandsEnum = {
 export const DefaultServiceCommandsEnum = {
     STOP_COMMAND: "stop"
 }
+
+export const DefaultAccountCommandsEnum = {
+    CREATE_VARIABLE: "create",
+    REMOVE_VARIABLE: "remove",
+}

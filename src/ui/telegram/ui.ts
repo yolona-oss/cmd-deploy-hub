@@ -96,7 +96,7 @@ export class TelegramUI extends WithInit implements IUI<TgContext> {
         })
 
         // assign to autocomplete
-        this.tgBotInstance.telegram.setMyCommands(
+        await this.tgBotInstance.telegram.setMyCommands(
             mapCommands(DefaultTgUICommands).concat(commands)
         )
 

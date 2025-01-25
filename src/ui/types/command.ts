@@ -1,8 +1,9 @@
+import { BaseCommandService } from "services/command-service"
+
 interface BaseCommand {
     command: string
     description: string
     args?: string[]
-    isService?: boolean
     accountData?: {
         path: string
         name: string
@@ -10,7 +11,8 @@ interface BaseCommand {
 }
 
 export interface IUICommand<ThisUI, CtxType> extends BaseCommand {
-    fn: (this: ThisUI, ctx: CtxType) => Promise<void>
+    fn: (this: ThisUI, ctx: CtxType) => Promise<void> |
+        BaseCommandService
 
     next?: string[]
     prev?: string

@@ -21,10 +21,10 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
         super()
         this.context = {
             type: AvailableUIsEnum.CLI,
-            userInput: '',
             userSession: { state: '', data: {} },
-            sendOutput: (output: string) => {
-                console.log(":: " + output); // Print output to console
+            text: "",
+            reply: async (message: string) => {
+                console.log(":: " + message);
             }
         };
         this.cmds = this.commandHandler.mapHandlersToCommands().map(cmd => cmd.command)
@@ -55,7 +55,7 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
         const rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,
-            prompt: 'cmdhub> ',
+            prompt: 'cmdhub;> ',
             completer: (line: string) => {
                 const completions = this.cmds.filter((c) => c.startsWith(line));
                 return completions
@@ -65,13 +65,13 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
         log.echo("Starting CLI...")
 
         rl.on('line', async (line) => {
-            this.context.userInput = line;
+            this.context.text = line;
             const [command, ...args] = line.split(' ');
             this.context.userSession.data.args = args; // Save args in context
 
             const response = await this.commandHandler!.handleCommand(command, this.context);
             if (response) {
-                this.context.sendOutput(response);
+                this.context.reply(response);
             }
         });
 

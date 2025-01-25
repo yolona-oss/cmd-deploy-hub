@@ -1,16 +1,25 @@
-import { DefaultSeqCommandsEnum, DefaultServiceCommandsEnum } from "constants/command";
+import {
+    DefaultSeqCommandsEnum,
+    DefaultServiceCommandsEnum,
+    DefaultAccountCommandsEnum,
+} from "constants/command";
+import { assignToCustomPath, extractValueFromObject } from 'utils/object'
+import { IAccount } from "db";
 import { WithInit } from "types/with-init";
 import { BaseUIContext, IUICommandSimple } from "ui/types";
 import { Node, Graph, printGraph } from "utils/graf";
 import { WithNeighbors } from "types/with-neighbors";
 import { SequenceHandler } from "./sequence-handler";
 import log from 'utils/logger'
+import { BaseCommandService } from "./command-service";
 
-export type IHandler<Ctx> = (ctx: Ctx) => Promise<string|void>
+export type IHandlerFunction<Ctx> = (ctx: Ctx) => Promise<string|void>
+export type IHandlerService = BaseCommandService<any>
+
+export type IHandler<Ctx> = IHandlerFunction<Ctx> | IHandlerService
 
 interface IHandleCallback<Ctx> extends Partial<WithNeighbors> {
     fn: IHandler<Ctx>
-    isService?: boolean
     description: string
     args?: string[]
 }
@@ -22,7 +31,7 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
     private callbacks: Map<string, IHandleCallback<TContext>>
     private sequenceHandler?: SequenceHandler
 
-    private activeServices: Map<string, Array<string>> = new Map() // userId -> services
+    private activeServices: Map<string, Array<BaseCommandService<any>>> = new Map() // userId -> services
 
     constructor() {
         super()
@@ -42,7 +51,6 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
             {
                 fn: handler,
                 description: command.description,
-                isService: command.isService,
                 args: command.args,
                 next: command.next,
                 prev: command.prev
@@ -55,6 +63,7 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
     // TODO its tooooooo huge and rediculus func(((((((((~_~)))))))))
     public async handleCommand(command: string, ctx: TContext): Promise<string | void> {
         const cb = this.callbacks.get(command);
+        const arg = this.getArgs(ctx.text!)
         const _userId = ctx.manager?.userId
         const userId = ctx.manager!.userId
 
@@ -73,16 +82,29 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
             return err
         }
 
+        switch (command) {
+            case DefaultAccountCommandsEnum.CREATE_VARIABLE:
+                let curData = (await ctx.manager!.populate<{account: IAccount}>("account")).account.data
+                const assignedData = assignToCustomPath(curData, arg[0], arg[1])
+                await ctx.manager!.updateOne({ account: { data: assignedData }})
+                return "Variable created. Current data for context:\n" + JSON.stringify(assignedData, null, 4)
+            case DefaultAccountCommandsEnum.REMOVE_VARIABLE:
+                return "Not implemented."
+        }
+
+        // stop services
         if (command === DefaultServiceCommandsEnum.STOP_COMMAND) {
             const splited = ctx.text!.trim().split(" ")
             if (splited.length <= 1) {
                 return "No service name passed"
             }
             const service = splited[1]
-            if (this.activeServices.get(String(userId))!.includes(service)) {
+            if (this.activeServices.get(String(userId))!.map(serv => serv.name).includes(service)) {
+                await this.activeServices.get(String(userId))!.
+                find(serv => serv.name === service)!.terminate()
                 this.activeServices.get(String(userId))!.
                     splice(
-                        this.activeServices.get(String(userId))!.indexOf(service),
+                        this.activeServices.get(String(userId))!.map(serv => serv.name).indexOf(service),
                         1
                     )
                 return "Service stopped."
@@ -95,33 +117,63 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
             return 'Unknown command.';
         }
 
-        if (cb.isService) {
+        // register services
+        if (cb.fn instanceof BaseCommandService || typeof cb.fn === 'object' || typeof cb.fn !== 'function') {
+            const serviceName = cb.fn.name
+
+            // initialize activeServices for userId
             if (!this.activeServices.has(String(userId))) {
                 this.activeServices.set(String(userId), [])
             }
 
-            if (!ctx.text) {
-                return "Service name required(Context currupted?)"
-            }
-
-            const splited = ctx.text!.trim().split(" ")
-            if (splited.length <= 1) {
-                return "No service name passed"
-            }
-            const service = splited[1]
-            if (this.activeServices.get(String(userId))!.includes(service)) {
+            if (this.activeServices.get(String(userId))!.map(serv => serv.name).includes(serviceName)) {
                 return `Service ${command} already active.`
             }
 
-            this.activeServices.get(String(userId))!.push(command)
+            this.activeServices.get(String(userId))!.push(cb.fn)
         }
 
         try {
-            return await cb.fn(ctx);
+            if (typeof cb.fn === 'function') {
+                return await cb.fn(ctx);
+                //} else if (typeof cb.fn === 'object'/* && cb.fn instanceof BaseCommandService*/) {
+            } else if (cb.fn) {
+                cb.fn.on("message", async (message: string) => {
+                    await this.sendMessageToContext(ctx, message)
+                })
+                cb.fn.on('done', async () => {
+                    await this.handleServiceDone(String(userId), cb.fn.name, ctx)
+                })
+                log.echo("-- Starting service: " + cb.fn.name)
+                cb.fn.run()
+            }
         } catch (e) {
             return JSON.stringify(e, null, 4)
         }
     }
+
+    private removeService(userId: string, serviceName: string) {
+        this.activeServices.get(userId)!.splice(
+            this.activeServices.get(userId)!.map(serv => serv.name).indexOf(serviceName),
+            1
+        )
+    }
+
+    private async handleServiceDone(userId: string, serviceName: string, ctx: TContext) {
+        log.echo("-- Service done: " + serviceName)
+        this.removeService(userId, serviceName)
+
+        await this.sendMessageToContext(ctx, `Service ${serviceName} done.`)
+    }
+
+    private async sendMessageToContext(ctx: TContext, message: string) {
+        if (ctx.reply) {
+            await ctx.reply(message)
+        } else {
+            log.error(`No reply function in context. Unhandled message: "${message}"`)
+        }
+    }
+
 
     public mapHandlersToCommands(): IUICommandSimple[] {
         const cmd = this.callbacks.keys().toArray()
@@ -153,6 +205,18 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
                     command: DefaultServiceCommandsEnum.STOP_COMMAND,
                     description: "Stop service with passed name <service-name>.",
                     args: ["service-name"]
+                }
+            ])
+            .concat([
+                {
+                    command: DefaultAccountCommandsEnum.CREATE_VARIABLE,
+                    description: "Create variable for user execution context",
+                    args: ["path", "value"]
+                },
+                {
+                    command: DefaultAccountCommandsEnum.REMOVE_VARIABLE,
+                    description: "Remove variable for user execution context",
+                    args: ["path"]
                 }
             ])
     }
@@ -213,7 +277,7 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
         this.setInitialized()
     }
 
-    private getArgs(text: string) {
+    private getArgs(text: string): string[] {
         const splited = text.trim().split(" ")
         return splited.slice(1)
     }
