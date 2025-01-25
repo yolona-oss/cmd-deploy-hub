@@ -1,0 +1,63 @@
+{
+    //"extends": "ts-node/node16/tsconfig.json",
+
+    // Most ts-node options can be specified here using their programmatic names.
+    "ts-node": {
+        "require": ["tsconfig-paths/register"],
+        // It is faster to skip typechecking.
+        // Remove if you want ts-node to do typechecking.
+        "transpileOnly": true,
+
+        "files": true,
+
+        "compilerOptions": {
+            // compilerOptions specified here will override those declared below,
+            // but *only* in ts-node.  Useful if you want ts-node and tsc to use
+            // different options with a single tsconfig.json.
+        }
+    },
+
+    "compilerOptions": {
+        "incremental": true,
+        "target": "ESNext" /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019', 'ES2020', or 'ESNEXT'. */,
+        "module": "commonjs" /* Specify module code generation: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', 'es2020', or 'ESNext'. */,
+        "allowJs": true,
+        "checkJs": true,
+        "declaration": false,
+        "removeComments": true,
+        "isolatedModules": true,
+
+        "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictBindCallApply": true,
+        "alwaysStrict": true,
+
+        "noUnusedLocals": false,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+
+        "moduleResolution": "node",
+        "outDir": "./dist/",
+        "baseUrl": "./src",
+        "rootDir": "./",
+        //"paths": {
+        //        "*": [ "./*" ]
+        //},
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "preserveSymlinks": true,
+
+
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true
+    },
+    "include": [
+        "./src/**/*",
+        "package.json"
+    ]
+}

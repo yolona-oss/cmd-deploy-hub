@@ -1,0 +1,46 @@
+{
+    "name": "cmd-deploy-app",
+    "version": "0.0.1",
+    "main": "index.js",
+    "scripts": {
+        "dev": "ts-node src/main.ts",
+        "start": "node -r tsconfig-paths/register dist/src/main.js",
+        "build": "tsc --build --pretty"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "description": "",
+    "dependencies": {
+        "@solana/web3.js": "^1.98.0",
+        "@types/async-lock": "^1.4.2",
+        "@types/chalk": "^0.4.31",
+        "@types/download": "^8.0.5",
+        "@types/mime-types": "^2.1.4",
+        "@types/web3": "^1.0.20",
+        "async-lock": "^1.4.1",
+        "axios": "^1.7.9",
+        "chalk": "^5.4.1",
+        "cheerio": "^1.0.0",
+        "crypto": "^1.0.1",
+        "download": "^8.0.0",
+        "events": "^3.3.0",
+        "find-process": "^1.4.10",
+        "fuzzy": "^0.1.3",
+        "glob": "^11.0.1",
+        "mime-types": "^2.1.35",
+        "mongoose": "^8.9.5",
+        "multi-progress-bars": "^5.0.3",
+        "ngrok": "^5.0.0-beta.2",
+        "progress": "^2.0.3",
+        "qs": "^6.14.0",
+        "superstruct": "^2.0.2",
+        "telegraf": "^4.16.3",
+        "ts-command-line-args": "^2.5.1",
+        "typescript": "^5.7.3",
+        "web3": "^4.16.0"
+    },
+    "devDependencies": {
+        "tsconfig-paths": "^4.2.0"
+    }
+}
