@@ -2,8 +2,9 @@ import { Web3 as LibWeb3, TransactionReceipt } from 'web3'
 import { Network } from 'blockchain/types';
 import supportedNetworks, { web3_dummy_network } from 'blockchain/internal/networks';
 import { IBlockchainConnection } from 'blockchain/types/connection';
+import { RegisteredSubscription } from 'web3/lib/commonjs/eth.exports';
 
-export class EthBlockchainConnection implements IBlockchainConnection {
+export class EthBlockchainConnection implements IBlockchainConnection<LibWeb3<RegisteredSubscription>> {
     private isConnected: boolean = false
     private web3: LibWeb3 = new LibWeb3(new LibWeb3.providers.HttpProvider(web3_dummy_network.rpc.toString()));
 
@@ -11,7 +12,7 @@ export class EthBlockchainConnection implements IBlockchainConnection {
         private connNetwork: Network
     ) { }
 
-    connect() {
+    async connect(): Promise<void> {
         if (this.isConnected) {
             throw new Error("BlockchainClient.connect() Already connected")
         }
@@ -22,7 +23,7 @@ export class EthBlockchainConnection implements IBlockchainConnection {
         this.isConnected = true
     }
 
-    public disconnect() {
+    async disconnect() {
         if (!this.isConnected) {
             throw new Error("BlockchainClient.disconnect() Not connected")
         }
@@ -33,6 +34,10 @@ export class EthBlockchainConnection implements IBlockchainConnection {
 
     IsConnected() {
         return this.isConnected
+    }
+
+    getConnection(): LibWeb3<RegisteredSubscription> {
+        return this.web3
     }
 
     CurrentNetwork(): Network {

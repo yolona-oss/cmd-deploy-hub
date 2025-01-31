@@ -1,5 +1,5 @@
 import * as telegraf from 'telegraf'
-import { getConfig } from 'config'
+import { getConfig, getInitialConfig } from 'config'
 import log from 'utils/logger';
 
 import { FilesWrapper, Manager } from 'db';
@@ -13,6 +13,9 @@ import { actions, stickers } from 'ui/telegram/constants';
 import { TgContext } from "ui/telegram/types";
 import { AvailableUIsEnum, AvailableUIsType, IUI, mapCommands } from 'ui/types';
 import { WithInit } from 'types/with-init';
+import { LockManager } from 'utils/lock-manager';
+
+import crypto from 'crypto'
 
 export class TelegramUI extends WithInit implements IUI<TgContext> {
     public readonly tgBotInstance: telegraf.Telegraf<TgContext>
@@ -28,6 +31,20 @@ export class TelegramUI extends WithInit implements IUI<TgContext> {
 
     ContextType(): AvailableUIsType {
         return AvailableUIsEnum.Telegram
+    }
+
+    public lock(lockManager: LockManager): boolean {
+        return typeof lockManager.createLockFile(
+            crypto.hash("sha256", getInitialConfig().bot.token)
+        ) === 'string'
+    }
+
+    public unlock(lockManager: LockManager): boolean {
+        return lockManager.deleteLockFile(
+            LockManager.createLockFileName(
+                crypto.hash("sha256", getInitialConfig().bot.token)
+            )
+        )
     }
 
     isRunning(): boolean {

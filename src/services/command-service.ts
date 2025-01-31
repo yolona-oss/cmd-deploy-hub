@@ -1,6 +1,6 @@
 import { IRunnable } from "types/runnable";
 import { EventEmitter, EventMap } from "utils/EventEmitter";
-import { Scheduler } from "utils/scheduler";
+import { ThreadPool } from "utils/thread-pool";
 
 export interface ICommandService extends IRunnable {
 }

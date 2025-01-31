@@ -1,9 +1,11 @@
-import cmdhub from 'cmdhub'
+import { AppCmdhub } from 'cmdhub'
 import { CommandHandler } from 'services/command-handler'
 import { BaseCommandService } from 'services/command-service'
 import { TgContext } from 'ui/telegram'
 import { genRandomNumberBetween } from 'utils/random'
 import { sleep } from 'utils/time'
+
+import log from 'utils/logger'
 
 class ServiceOne extends BaseCommandService<string> {
     constructor() {
@@ -25,34 +27,47 @@ class ServiceOne extends BaseCommandService<string> {
     }
 }
 
-let handler = new CommandHandler<TgContext>()
-handler.register({
-    command: "a",
-    description: "b",
-    prev: "ff"
-},
-    async function(ctx: TgContext) {
-        ctx.reply("fffffffffff")
-    }
-)
+function setup(handler: CommandHandler<TgContext>) {
+    handler.register({
+        command: "a",
+        description: "b",
+        prev: "ff"
+    },
+        async function(ctx: TgContext) {
+            ctx.reply("fffffffffff")
+        }
+    )
 
-handler.register({
-    command: "ff",
-    description: "bbbbbbbb",
-    next: ["a"]
-},
-    async function(ctx: TgContext) {
-        ctx.reply("call next /a")
-    }
-)
+    handler.register({
+        command: "ff",
+        description: "bbbbbbbb",
+        next: ["a"]
+    },
+        async function(ctx: TgContext) {
+            ctx.reply("call next /a")
+        }
+    )
 
-handler.register({
-    command: "blob",
-    description: "Fuck",
-},
-    new ServiceOne()
-)
+    handler.register({
+        command: "blob",
+        description: "Fuck",
+    },
+        new ServiceOne()
+    )
+}
 
-handler.done()
+function bootstrap() {
+    let handler = new CommandHandler<TgContext>()
+    setup(handler)
+    handler.done()
 
-cmdhub("telegram", handler)
+    const app = new AppCmdhub("telegram", handler)
+
+    app.setErrorInterceptor((error: Error) => {
+        log.error(error)
+    })
+    app.Initialize()
+    app.run()
+}
+
+bootstrap()

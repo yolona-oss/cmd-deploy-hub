@@ -10,22 +10,20 @@ import { LockManager } from "utils/lock-manager";
 import { MongoConnect } from "db";
 import { getConfig } from "config";
 import mongoose from "mongoose";
-import { WithInit } from "types/with-init";
 
-export abstract class Application<CtxType extends BaseUIContext> extends WithInit implements IRunnable, Identificable {
+export abstract class Application<CtxType extends BaseUIContext> implements IRunnable, Identificable {
     public readonly id: string
 
     private active: boolean = false
 
-    protected ui: IUI<CtxType>
+    private ui: IUI<CtxType>
 
-    protected readonly lockManager: LockManager = new LockManager(`./.lock`)
+    public readonly lockManager: LockManager = new LockManager(`./.lock`)
 
     constructor(
         name: string,
         ui: IUI<CtxType>
     ) {
-        super()
         this.ui = ui
         this.id = name
         process.once("beforeExit", async () => await this.terminate());
@@ -37,52 +35,39 @@ export abstract class Application<CtxType extends BaseUIContext> extends WithIni
         return this.active
     }
 
-    abstract Initialize(): Promise<void>
-
-    private _prevErrorHandler?: (error: Error) => void
-
-    public setErrorInterceptor(handler: (error: Error) => void) {
-        if (this._prevErrorHandler) {
-            process.removeListener("uncaughtException", this._prevErrorHandler)
-            process.removeListener("rejectionHandled", this._prevErrorHandler)
-        }
-
-        this._prevErrorHandler = handler
-        process.on("uncaughtException", handler)
-        process.on("rejectionHandled", handler)
-    }
-
     public removeLock(hash: string) {
         this.lockManager.deleteLockFile(LockManager.createLockFileName(hash))
     }
 
-    private async isPreviousRunning() {
-        const pid = this.lockManager.getLockFileData(this.id)
-        if (typeof pid !== "string") {
-            return false
-        }
+    private async isSavePIDRun(pid: string|number) {
         return (await find("pid", pid)).length > 0
     }
 
     private async lockApp() {
-        const createLock = () => {
-            this.lockManager.deleteLockFile(LockManager.createLockFileName(this.id))
-            this.lockManager.createLockFile(this.id, process.pid.toString())
+        if (!this.lockManager.createLockFile(this.id, process.pid.toString())) {
+            await this.isSavePIDRun(this.lockManager.getLockFileData(this.id))
         }
-
-        const lock = this.lockManager.createLockFile(this.id, process.pid.toString())
-        if (!lock) {
-            if (await this.isPreviousRunning()) {
-                throw new Error("Application.lockApp() application with spame id already running")
-            }
-        }
-        createLock()
     }
 
     private async setup() {
         try {
             log.echo("Application::setup() checking lock...")
-            await this.lockApp()
+            let lock = this.lockManager.createLockFile(this.id, process.pid.toString())
+            if (!lock) { // if lock already exists
+                log.echo("Application::setup() lock exists, checking if process is alive...")
+                const pid = this.lockManager.getLockFileData(this.id)
+                if (pid) {
+                    const isAlive = (await find("pid", pid)).length > 0
+                    if (!isAlive) { // if process is dead
+                        log.echo("Application::setup() process is dead, creating new lock...")
+                        this.lockManager.deleteLockFile(LockManager.createLockFileName(this.id))
+                        lock = this.lockManager.createLockFile(this.id, process.pid.toString())
+                    }
+                }
+            }
+            if (!lock) { // if lock exists and process is alive
+                throw new Error("Application.setup() application with spame id already running")
+            }
 
             const plzkillme = await getConfig()
             await MongoConnect(plzkillme.server.database.mongoose.connectionUri)
@@ -94,12 +79,6 @@ export abstract class Application<CtxType extends BaseUIContext> extends WithIni
 
     async run() {
         await this.setup()
-        await this.Initialize()
-
-        if (!this.isInitialized()) {
-            log.error("Application. Incoreect implementations of Initialize(). Not setInitialized() called.")
-            process.exit(-1)
-        }
 
         if (this.active) {
             throw new Error("Application::run() called when already active")

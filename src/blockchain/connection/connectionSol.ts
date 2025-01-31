@@ -14,7 +14,7 @@ import {
 } from '@solana/web3.js';
 import { IBlockchainConnection } from 'blockchain/types/connection';
 
-export class SolanaConnection implements IBlockchainConnection {
+export class SolanaConnection implements IBlockchainConnection<Connection> {
     private connection?: Connection;
     private isConnected: boolean = false;
 
@@ -41,6 +41,10 @@ export class SolanaConnection implements IBlockchainConnection {
         }
         this.isConnected = false
         this.connection = undefined
+    }
+
+    public getConnection(): Connection {
+        return this.connection!
     }
 
     private async createVersionedTransaction(

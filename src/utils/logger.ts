@@ -1,14 +1,14 @@
 import { appendFileSync } from 'fs'
 import chalk from 'chalk'
 import { createDirIfNotExist } from 'utils/fs-tools'
-//import Config from 'config'
+import {getInitialConfig} from 'config'
 
 //export enum LoggingLevel {
 //    Trace = 0,
-//    Debug,
-//    Warning,
-//    Error,
-//    Fatal,
+//    Debug = 1,
+//    Warning = 2,
+//    Error = 3,
+//    Fatal = 4,
 //}
 //
 //function strToLogLevel(str: string): LoggingLevel {
@@ -28,7 +28,7 @@ import { createDirIfNotExist } from 'utils/fs-tools'
 //    }
 //}
 //
-//const g_logginLevel: LoggingLevel = strToLogLevel(Config.log_level);
+//const g_logginLevel: LoggingLevel = strToLogLevel(getInitialConfig().log_level);
 
 function logTime() {
     return '[' + new Date().toLocaleTimeString() + ']'

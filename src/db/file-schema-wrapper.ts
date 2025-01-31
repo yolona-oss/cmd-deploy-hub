@@ -5,6 +5,7 @@ import { getConfig, getInitialConfig } from 'config'
 
 import * as fs from 'fs'
 import path from 'path'
+import log from 'utils/logger'
 
 import { File } from 'db'
 
@@ -14,11 +15,16 @@ class Files {
         try {
             const ico_path = path.join(
                 cfg.server.fileStorage.path,
-                "static/manager-icon.png")
+                "static", "manager-icon.png")
             const ico_static_path = path.join(
                 "assets",
                 "manager-icon.png")
             if (!fs.existsSync(ico_path)) {
+                log.echo("Files::constructor() copying default manager icon...")
+                if (!fs.existsSync(path.dirname(ico_path))) {
+                    log.echo("Files::constructor() creating default manager icon directory...")
+                    fs.mkdirSync(path.dirname(ico_path), { recursive: true })
+                }
                 fs.copyFileSync(ico_static_path, ico_path)
             }
         } catch (e) {

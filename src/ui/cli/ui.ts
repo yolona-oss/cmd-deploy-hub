@@ -7,6 +7,7 @@ import log from 'utils/logger'
 import { IUI } from 'ui/types'
 import { WithInit } from 'types/with-init';
 import { AvailableUIsEnum, AvailableUIsType } from 'ui/types';
+import { LockManager } from 'utils/lock-manager';
 
 export class CLIUI extends WithInit implements IUI<CLIContext> {
     private context: CLIContext;
@@ -31,16 +32,20 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
         this.setInitialized()
     }
 
+    lock(_: LockManager): boolean {
+        return true
+    }
+
+    unlock(_: LockManager): boolean {
+        return true
+    }
+
     ContextType(): AvailableUIsType {
         return AvailableUIsEnum.CLI
     }
 
     isRunning(): boolean {
         return this.isActive
-    }
-
-    async registerCommands(commandHandler: CommandHandler<CLIContext>) {
-        commandHandler
     }
 
     async run() {

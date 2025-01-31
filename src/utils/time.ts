@@ -1,3 +1,7 @@
+import { Range } from "types/range"
+
+export type TimeRange = Range
+
 export function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 export function timeoutPromise(timeout: number): Promise<void> {

@@ -1,1 +1,1 @@
-export type AsyncFunction = () => Promise<any>
+export type AsyncFunction<T = any> = () => Promise<T>

@@ -51,17 +51,22 @@ export class LockManager {
         if (this.lockFiles.has(filePath)) {
             fs.unlinkSync(filePath);
             this.lockFiles.delete(filePath);
+            return true
         }
+        return false
     }
 
     cleanupAll() {
+        let unlinked = 0
         for (const filePath of this.lockFiles) {
             try {
                 fs.unlinkSync(filePath);
+                unlinked++
             } catch (err) {
                 console.error(`Failed to delete lock file ${filePath}:`, err);
             }
         }
         this.lockFiles.clear();
+        return unlinked
     }
 }

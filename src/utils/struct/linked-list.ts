@@ -1,7 +1,8 @@
 import { ILinkedList, Node } from "types/linked-list";
+export { Node } from "types/linked-list";
 
 export class LinkedList<T> implements ILinkedList<T> {
-    private head: Node<T> | null = null;
+    public head: Node<T> | null = null;
 
     public insertInBegin(data: T): Node<T> {
         const node = new Node(data);
@@ -56,6 +57,10 @@ export class LinkedList<T> implements ILinkedList<T> {
     public size(): number {
         return this.traverse().length;
     }
+
+    getLast(cur_head: Node<T>): Node<T> {
+        return cur_head.next ? this.getLast(cur_head.next) : cur_head;
+    };
 
     public search(comparator: (data: T) => boolean): Node<T> | null {
         const checkNext = (node: Node<T>): Node<T> | null => {
