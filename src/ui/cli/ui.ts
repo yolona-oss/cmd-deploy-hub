@@ -8,6 +8,7 @@ import { IUI } from 'ui/types'
 import { WithInit } from 'types/with-init';
 import { AvailableUIsEnum, AvailableUIsType } from 'ui/types';
 import { LockManager } from 'utils/lock-manager';
+import { FilesWrapper, Manager } from 'db';
 
 export class CLIUI extends WithInit implements IUI<CLIContext> {
     private context: CLIContext;
@@ -22,6 +23,7 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
         super()
         this.context = {
             type: AvailableUIsEnum.CLI,
+            //manager: {},
             userSession: { state: '', data: {} },
             text: "",
             reply: async (message: string) => {
@@ -29,6 +31,7 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
             }
         };
         this.cmds = this.commandHandler.mapHandlersToCommands().map(cmd => cmd.command)
+        console.log(this.cmds)
         this.setInitialized()
     }
 
@@ -56,6 +59,19 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
         if (this.isActive) {
             throw new Error("CLIUI::run() already running")
         }
+
+        let manager = await Manager.findOne({userId: -1})
+        if (!manager) {
+            manager = await Manager.create({
+                isAdmin: true,
+                name: "CliAdmin",
+                userId: -1,
+                online: false,
+                avatar: (await FilesWrapper.getDefaultAvatar()).id,
+                useGreeting: true
+            })
+        }
+        this.context.manager = manager
 
         const rl = readline.createInterface({
             input: process.stdin,

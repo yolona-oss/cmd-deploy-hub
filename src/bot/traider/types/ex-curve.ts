@@ -3,10 +3,10 @@ import { LinkedList } from "utils/struct/linked-list";
 import { TradeSide } from "./trade";
 
 export interface ExCurveSimpleNode {
-    open: bigint,
-    close: bigint,
-    high: bigint,
-    low: bigint,
+    open: number,
+    close: number,
+    high: number,
+    low: number,
     timeStart: number
 }
 
@@ -16,8 +16,8 @@ export interface ExCurveFullNode {
 }
 
 export interface ExCurveTrade {
-    price: bigint,
-    quantity: bigint,
+    price: number,
+    quantity: number,
     side: typeof TradeSide[keyof typeof TradeSide];
 }
 

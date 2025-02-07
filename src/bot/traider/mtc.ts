@@ -1,14 +1,15 @@
-import { ISTCMetrics, SlaveTraderCtrl } from "bot/traider/stc";
+import { SlaveTraderCtrl } from "bot/traider/stc";
+import { ISTCMetrics } from "./stc-metric";
 import { IRunnable } from "types/runnable";
 import { AbstractState } from "types/state";
 import { BaseTradeApi } from "./trade-api/base-trade-api";
-import { ExCurveNodeList, ExCurveFullNode } from "./types/ex-curve";
-import { LinkedList } from "utils/struct/linked-list";
 import { Trade } from "./types";
-import { isExDateInRange } from "./types/time-range";
 import { BotDrivenCurve } from "./bot-driven-curve";
 import { Identificable } from "types/identificable";
 import log from "utils/logger";
+import { sleep } from "utils/time";
+import { IClonable } from "types/clonable";
+import { IBaseTradeTarget } from "./types/trade-target";
 
 export abstract class MTCContext {
     constructor(
@@ -43,22 +44,23 @@ export abstract class MTCState extends AbstractState<MTCContext> {
 }
 
 type LoopFnType<
-        TradeApi extends BaseTradeApi<WalletType, TxResType>,
-        WalletType extends object,
-    TxResType> =
-        (this: MasterTraderCtrl<TradeApi, WalletType, TxResType>, slave: SlaveTraderCtrl<TradeApi, WalletType, TxResType>[]) => Promise<void>
+        TradeApi extends BaseTradeApi<TargetType, ExPlatformRes> = BaseTradeApi<any, any>,
+        TargetType extends IBaseTradeTarget = IBaseTradeTarget,
+        ExPlatformRes = any
+> = (this: MasterTraderCtrl<TradeApi, TargetType, ExPlatformRes>, slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>[]) => Promise<void>
 
 export abstract class MasterTraderCtrl<
-        TradeApi extends BaseTradeApi<
-                                WalletType, TxResType
-                            >,
-        WalletType extends object,
-        TxResType
+        TradeApi extends BaseTradeApi<TargetType, ExPlatformRes> = any & BaseTradeApi,
+        TargetType extends IBaseTradeTarget = IBaseTradeTarget,
+        ExPlatformRes = any
     >
-    implements IRunnable, Identificable
+    implements
+        IRunnable,
+        Identificable,
+        IClonable
 {
     private _isRunning: boolean = false
-    protected loopFn: LoopFnType<TradeApi, WalletType, TxResType>
+    protected loopFn: LoopFnType<TradeApi, TargetType, ExPlatformRes>
 
     protected botDrivenCurve
     private curve_id
@@ -66,8 +68,8 @@ export abstract class MasterTraderCtrl<
     private static flag: boolean = true
 
     constructor(
-        public readonly target: string,
-        protected slaves: Array<SlaveTraderCtrl<TradeApi, WalletType, TxResType>>,
+        public readonly target: TargetType,
+        protected slaves: Array<SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>>,
         protected tradeApi: TradeApi,
         protected ctx: MTCContext,
         public readonly id: string = "mtc_main"
@@ -78,11 +80,11 @@ export abstract class MasterTraderCtrl<
             if (!s.isInitialized()) {
                 throw new Error("MasterTraderCtrl::constructor() slave not initialized!")
             }
-            s.onsell = (trade: Trade<TxResType>) => this.onSell(trade)
-            s.onbuy = (trade: Trade<TxResType>) => this.onBuy(trade)
+            s.onsell = (trade: Trade<TargetType, ExPlatformRes>) => this.onSell(trade)
+            s.onbuy = (trade: Trade<TargetType, ExPlatformRes>) => this.onBuy(trade)
         }
 
-        this.curve_id = `Id${this.id}_Api${this.tradeApi.id}_Target{this.target}_curve`
+        this.curve_id = `Id${this.id}_Api${this.tradeApi.id}_Target${this.target.market_id}_curve`
         this.botDrivenCurve = BotDrivenCurve.loadFromFile(this.curve_id)
 
         this.loopFn = async function() {
@@ -94,17 +96,17 @@ export abstract class MasterTraderCtrl<
 
     }
 
-    public setLoopFn(loopFn: LoopFnType<TradeApi, WalletType, TxResType>) {
+    abstract clone(): MasterTraderCtrl<TradeApi, TargetType, ExPlatformRes>
+
+    public setLoopFn(loopFn: LoopFnType<TradeApi, TargetType, ExPlatformRes>) {
         this.loopFn = loopFn
     }
-
-    //public 
 
     public changeState(state: MTCState) {
         this.ctx.transitionTo(state)
     }
 
-    private onSell(trade: Trade<TxResType>) {
+    private onSell(trade: Trade<TargetType, ExPlatformRes>) {
         this.botDrivenCurve.addTrade({
             price: trade.value.price,
             quantity: trade.value.quantity,
@@ -113,7 +115,7 @@ export abstract class MasterTraderCtrl<
         })
     }
 
-    private onBuy(trade: Trade<TxResType>) {
+    private onBuy(trade: Trade<TargetType, ExPlatformRes>) {
         this.botDrivenCurve.addTrade({
             price: trade.value.price,
             quantity: trade.value.quantity,
@@ -122,9 +124,47 @@ export abstract class MasterTraderCtrl<
         })
     }
 
-    public applyToSlaves(fn: (slave: SlaveTraderCtrl<TradeApi, WalletType, TxResType>, index: number) => void) {
+    addSlave(slave: SlaveTraderCtrl<TradeApi, TargetType,  ExPlatformRes>) {
+        slave.onsell = (trade: Trade<TargetType, ExPlatformRes>) => this.onSell(trade)
+        slave.onbuy = (trade: Trade<TargetType, ExPlatformRes>) => this.onBuy(trade)
+        this.slaves.push(slave)
+    }
+
+    /**
+    * Filter slaves and assign to this.slaves
+    * Returns removed and kept slaves
+    */
+    async filterSlaves(fn: (slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>) => Promise<boolean>): Promise<{
+        removed: Array<SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>>,
+        kept: Array<SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>>
+    }> {
+        let removed = []
+        let kept = []
+        for (const slave of this.slaves) {
+            if (await fn(slave)) {
+                kept.push(slave)
+            } else {
+                removed.push(slave)
+            }
+        }
+
+        this.slaves = kept
+
+        return {
+            removed: removed,
+            kept: kept
+        }
+    }
+
+    removeSlave(slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>) {
+        slave.onsell = () => {}
+        slave.onbuy = () => {}
+        this.slaves.splice(this.slaves.indexOf(slave), 1)
+    }
+
+    public async applyToSlaves(fn: (slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>, index: number) => Promise<void>) {
         for (let i = 0; i < this.slaves.length; i++) {
-            fn(this.slaves[i], i)
+            await fn(this.slaves[i], i)
         }
     }
 
@@ -133,14 +173,14 @@ export abstract class MasterTraderCtrl<
     }
 
     public async targetInfo() {
-        return await this.tradeApi.TargetInfo(this.target)
+        return await this.tradeApi.targetInfo(this.target)
     }
 
     public slavesCount() {
         return this.slaves.length
     }
 
-    protected getRandomSlave(): SlaveTraderCtrl<TradeApi, WalletType, TxResType> {
+    protected getRandomSlave(): SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes> {
         return this.slaves[Math.floor(Math.random() * this.slaves.length)]
     }
 
@@ -148,7 +188,7 @@ export abstract class MasterTraderCtrl<
         this._isRunning = true
 
         while (this._isRunning) {
-            await this.loopFn(this.slaves)
+            await sleep(1000)
         }
 
         for (const slave of this.slaves) {
@@ -158,6 +198,9 @@ export abstract class MasterTraderCtrl<
 
     async terminate() {
         this.botDrivenCurve.saveToFile(this.curve_id)
+        //for (const slave of this.slaves) {
+        //    await this.ctx.stopSlave(slave)
+        //}
         this._isRunning = false
     }
 
@@ -169,12 +212,13 @@ export abstract class MasterTraderCtrl<
             BuyTrades: [],
             ErrorTrades: [],
             ErrorRate: 0,
-            BuyMeanPrice: 0n,
-            SellMeanPrice: 0n,
-            TotalBuyVolume: 0n,
-            TotalSellVolume: 0n,
-            TotalBuyVolumePrice: 0n,
-            TotalSellVolumePrice: 0n
+            BuyMeanPrice: 0,
+            SellMeanPrice: 0,
+            TotalBuyVolume: 0,
+            TotalSellVolume: 0,
+            TotalBuyVolumePrice: 0,
+            TotalSellVolumePrice: 0,
+            DropedTradesCount: 0
         }): ISTCMetrics {
         let dmetrics: ISTCMetrics = Object.assign({}, initial)
 

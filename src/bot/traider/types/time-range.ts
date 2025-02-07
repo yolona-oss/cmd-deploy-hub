@@ -6,8 +6,8 @@ export type ExTimeRange = ExTimeRangeMin | ExTimeRangeHours | ExTimeRangeDays
 
 export interface TimeRangeValue {
     range: ExTimeRange
-    start: bigint
-    end: bigint
+    start: number
+    end: number
 }
 
 export function exTimeRangeToMilliseconds(range: ExTimeRange) {

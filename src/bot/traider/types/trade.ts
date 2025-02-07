@@ -1,18 +1,14 @@
 import { Range } from "types/range";
+import { ITraider } from "./traider";
+import { IBaseTradeTarget } from "./trade-target";
+import { DEXWallet } from "./wallet";
 
-export interface Trade<TxResType = any> {
-    symbol: string;
-    target: string;
-    value: ITradeTxType;
-    side: typeof TradeSide[keyof typeof TradeSide];
-    /**
-     * Transaction id if successful
-     */
-    result: ITradeTxResult<TxResType>
-}
-
-export function isTrade<TxResType>(obj: any): obj is Trade<TxResType> {
-    return 'symbol' in obj && 'value' in obj && 'side' in obj && 'result' in obj
+export interface Trade<TradeTarget extends IBaseTradeTarget = IBaseTradeTarget, ResponceData = never> {
+    target: TradeTarget;
+    value: ITradeTargetValue;
+    side: TradeSideType;
+    result: IPlatformResponce<ResponceData>;
+    time: number;
 }
 
 export const TradeSide = {
@@ -20,35 +16,43 @@ export const TradeSide = {
     Sell: "SELL"
 }
 
-export type ITradeTxType = { quantity: bigint, price: bigint } // | number 
+export type TradeSideType = typeof TradeSide[keyof typeof TradeSide]
 
-export interface ITradeTxResult<TxResType> {
-    signature?: string;
+export type ITradeTargetValue<T = number> = { quantity: T, price: T }
+
+export interface IPlatformResponce<ResponceData = never> {
+    signature: string;
     error?: unknown;
-    results?: TxResType;
+    data?: ResponceData;
     success: boolean;
 }
 
-export interface TradeOffer<WalletType> {
-    traider: WalletType,
-    target: string,
-    tx: ITradeTxType,
-    slippage?: bigint,
+export interface ITradeOrder {
+    from: ITraider;
+    price: number;
+    quantity: number;
+}
+
+export interface TradeOffer<TradeTarget extends IBaseTradeTarget = IBaseTradeTarget> {
+    traider: ITraider,
+    target: TradeTarget,
+    tx: ITradeTargetValue,
+    slippage?: number,
     fee?: any,
 }
 
 export interface ITargetInfo<TxData = never> {
-    MC: bigint;
-    Volume: bigint;
-    CurPrice: bigint;
-    CurSupply: bigint;
-    Holders: bigint;
+    MC: number;
+    Volume: number;
+    CurPrice: number;
+    CurSupply: number;
+    Holders: number;
     trades: (range: Range) => Promise<{
         trades: {
             time: number,
-            initiator: string, // pubkey or something or non dex platform :D
-            tx: ITradeTxType,
-            side: typeof TradeSide[keyof typeof TradeSide],
+            initiator: Omit<DEXWallet, "secretKey">,
+            tx: ITradeTargetValue,
+            side: TradeSideType,
             txData: TxData
         }[]
         overallTxCount: number

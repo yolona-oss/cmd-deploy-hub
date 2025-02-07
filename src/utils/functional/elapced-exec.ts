@@ -1,8 +1,14 @@
-export async function elapsedExec(fn: any): Promise<{ elapsed: number, result: any}> {
-    const start = Date.now();
-    const res = await fn();
+export async function elapsedExec(fn: () => Promise<any>): Promise<{ elapsed: number, result: any}> {
+    const start = performance.now()
+    let res = null
+    try {
+        res = await fn();
+    } catch (e) {
+        console.error(e)
+        throw e
+    }
     return {
-        elapsed: Date.now() - start,
+        elapsed: performance.now() - start,
         result: res
     }
 }

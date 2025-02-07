@@ -6,6 +6,7 @@ import { genRandomNumberBetween } from 'utils/random'
 import { sleep } from 'utils/time'
 
 import log from 'utils/logger'
+import { example } from 'bot/traider/impl/example'
 
 class ServiceOne extends BaseCommandService<string> {
     constructor() {
@@ -54,20 +55,39 @@ function setup(handler: CommandHandler<TgContext>) {
     },
         new ServiceOne()
     )
+
+    handler.register({
+        command: "example",
+        description: "run example trade pattern",
+    }, async function(ctx: TgContext) {
+            await ctx.reply("example")
+            await example()
+            await ctx.reply("done")
+    })
 }
 
-function bootstrap() {
-    let handler = new CommandHandler<TgContext>()
-    setup(handler)
-    handler.done()
+process.on('uncaughtException', (err, origin) => {
+    console.log(origin)
+    log.error("Uncaught exception", err)
+})
+process.on('unhandledRejection', (err, promise) => {
+    console.log(promise)
+    log.error("Unhandled rejection", err)
+})
 
-    const app = new AppCmdhub("telegram", handler)
-
-    app.setErrorInterceptor((error: Error) => {
-        log.error(error)
-    })
-    app.Initialize()
-    app.run()
+async function bootstrap() {
+    await example()
+    //let handler = new CommandHandler<TgContext>()
+    //setup(handler)
+    //handler.done()
+    //
+    //const app = new AppCmdhub("cli", handler)
+    //
+    //app.setErrorInterceptor((error: Error) => {
+    //    log.error(error)
+    //})
+    //app.Initialize()
+    //app.run()
 }
 
 bootstrap()

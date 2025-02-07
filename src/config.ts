@@ -58,9 +58,7 @@ const ConfigSign = object({
         }),
 
         port: min(number(), 1000),
-
-        subdomain: string(),
-        domain: string(),
+        uri: string(),
     }),
 
     log_level: string(),
@@ -96,8 +94,7 @@ if (!fs.existsSync(main_config_path)) {
 
             port: 7999,
 
-            subdomain: "noapi",
-            domain: "no",
+            uri: 'http://localhost:7999',
         },
 
         log_level: "trace",

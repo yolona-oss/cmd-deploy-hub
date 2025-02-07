@@ -1,9 +1,7 @@
 import { LinkedList } from "utils/struct/linked-list";
-import { ExCurveFullNode, ExCurveNodeList, ExCurveSimpleNode, ExCurveTrade } from "./types/ex-curve";
+import { ExCurveNodeList, ExCurveTrade } from "./types/ex-curve";
 import { ExTimeRange, isExDateInRange } from "./types/time-range";
 import { TimeRange } from "utils/time";
-
-import { bigint_math } from "utils/math/bigint";
 
 export type ExCurveTradePoint = ExCurveTrade&{time:number}
 export type ExCurveTradePoints = ExCurveTradePoint[]
@@ -58,8 +56,8 @@ export class ExCurve {
             list.insertAtEnd({
                 open: chunk[0].price,
                 close: chunk[chunk.length - 1].price,
-                high: bigint_math.max(...chunk.map(v => v.price)),
-                low: bigint_math.min(...chunk.map(v => v.price)),
+                high: Math.max(...chunk.map(v => v.price)),
+                low: Math.min(...chunk.map(v => v.price)),
                 timeStart: chunk[0].time,
             })
         }

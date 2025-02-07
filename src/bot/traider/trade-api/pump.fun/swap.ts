@@ -8,7 +8,7 @@ import { GLOBAL, FEE_RECIPIENT, SYSTEM_PROGRAM_ID, RENT, PUMP_FUN_ACCOUNT, PUMP_
 export async function pumpFunBuy(transactionMode: TransactionMode, payerPrivateKey: string, mintStr: string, solIn: number, priorityFeeInSol: number = 0, slippageDecimal: number = 0.25) {
     try {
         const connection = new Connection(
-            "https://mainnet.helius-rpc.com/?api-key=dfa5133f-e9fa-442f-891f-eae3c0b77875",
+            `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`,
             {
                 commitment: 'confirmed',
                 confirmTransactionInitialTimeout: 60000
@@ -38,7 +38,7 @@ export async function pumpFunBuy(transactionMode: TransactionMode, payerPrivateK
         );
 
         const tokenAccountInfo = await withRetry(() => 
-            connection.getAccountInfo(tokenAccountAddress)
+            connection.getAccountInfo(<PublicKey>tokenAccountAddress)
         );
 
         let tokenAccount: PublicKey;
@@ -51,9 +51,9 @@ export async function pumpFunBuy(transactionMode: TransactionMode, payerPrivateK
                     mint
                 )
             );
-            tokenAccount = tokenAccountAddress;
+            tokenAccount = <PublicKey>tokenAccountAddress;
         } else {
-            tokenAccount = tokenAccountAddress;
+            tokenAccount = <PublicKey>tokenAccountAddress;
         }
 
         const solInLamports = solIn * LAMPORTS_PER_SOL;
@@ -100,13 +100,13 @@ export async function pumpFunBuy(transactionMode: TransactionMode, payerPrivateK
             const signature = await withRetry(() => 
                 sendAndConfirmTransactionWrapper(connection, transaction, [payer])
             );
-            console.log('Buy transaction confirmed:', signature);
+            return signature
         }
         else if (transactionMode == TransactionMode.Simulation) {
             const simulatedResult = await withRetry(() => 
                 connection.simulateTransaction(transaction)
             );
-            console.log(simulatedResult);
+            return simulatedResult
         }
     } catch (error) {
         console.error('Error in pumpFunBuy:', error);
@@ -117,7 +117,7 @@ export async function pumpFunBuy(transactionMode: TransactionMode, payerPrivateK
 export async function pumpFunSell(transactionMode: TransactionMode, payerPrivateKey: string, mintStr: string, tokenBalance: number, priorityFeeInSol: number = 0, slippageDecimal: number = 0.25) {
     try {
         const connection = new Connection(
-            "https://mainnet.helius-rpc.com/?api-key=dfa5133f-e9fa-442f-891f-eae3c0b77875",
+            `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`,
             {
                 commitment: 'confirmed',
                 confirmTransactionInitialTimeout: 60000
@@ -146,7 +146,7 @@ export async function pumpFunSell(transactionMode: TransactionMode, payerPrivate
         );
 
         const tokenAccountInfo = await withRetry(() => 
-            connection.getAccountInfo(tokenAccountAddress)
+            connection.getAccountInfo(<PublicKey>tokenAccountAddress)
         );
 
         let tokenAccount: PublicKey;
@@ -159,9 +159,9 @@ export async function pumpFunSell(transactionMode: TransactionMode, payerPrivate
                     mint
                 )
             );
-            tokenAccount = tokenAccountAddress;
+            tokenAccount = <PublicKey>tokenAccountAddress;
         } else {
-            tokenAccount = tokenAccountAddress;
+            tokenAccount = <PublicKey>tokenAccountAddress;
         }
 
         const minSolOutput = Math.floor(tokenBalance! * (1 - slippageDecimal) * coinData["virtual_sol_reserves"] / coinData["virtual_token_reserves"]);
@@ -200,13 +200,13 @@ export async function pumpFunSell(transactionMode: TransactionMode, payerPrivate
             const signature = await withRetry(() => 
                 sendAndConfirmTransactionWrapper(connection, transaction, [payer])
             );
-            console.log('Sell transaction confirmed:', signature);
+            return signature
         }
         else if (transactionMode == TransactionMode.Simulation) {
             const simulatedResult = await withRetry(() => 
                 connection.simulateTransaction(transaction)
             );
-            console.log(simulatedResult);
+            return simulatedResult
         }
     } catch (error) {
         console.error('Error in pumpFunSell:', error);

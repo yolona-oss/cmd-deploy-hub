@@ -1,3 +1,6 @@
-export { type Trade, type ITradeTxType, isTrade, TradeSide, type ITradeTxResult, type TradeOffer, type ITargetInfo } from './trade'
+export { type Trade, type ITradeTargetValue, TradeSide, type IPlatformResponce, type TradeOffer, type ITargetInfo } from './trade'
 export { type TimeRangeValue } from './time-range'
 export { type IBalance } from './balance'
+export { type ITraider } from './traider'
+export { type DEXWallet } from './wallet'
+export { type IBaseTradeTarget, type IBaseDEXTradeTarget } from './trade-target'

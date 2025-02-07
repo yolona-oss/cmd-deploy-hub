@@ -1,44 +1,16 @@
 import { appendFileSync } from 'fs'
 import chalk from 'chalk'
 import { createDirIfNotExist } from 'utils/fs-tools'
-import {getInitialConfig} from 'config'
-
-//export enum LoggingLevel {
-//    Trace = 0,
-//    Debug = 1,
-//    Warning = 2,
-//    Error = 3,
-//    Fatal = 4,
-//}
-//
-//function strToLogLevel(str: string): LoggingLevel {
-//    switch (str) {
-//        case "Trace":
-//            return LoggingLevel.Trace;
-//        case "Debug":
-//            return LoggingLevel.Debug;
-//        case "Warning":
-//            return LoggingLevel.Warning;
-//        case "Error":
-//            return LoggingLevel.Error;
-//        case "Fatal":
-//            return LoggingLevel.Fatal;
-//        default:
-//            throw new Error("Unknown log level: " + str);
-//    }
-//}
-//
-//const g_logginLevel: LoggingLevel = strToLogLevel(getInitialConfig().log_level);
 
 function logTime() {
-    return '[' + new Date().toLocaleTimeString() + ']'
+    return '[' + new Date().toLocaleTimeString("ru") + ']'
 }
 
 createDirIfNotExist("./.log")
 
 const logFileName = "./.log/" +
     new Date()
-        .toLocaleDateString() +
+        .toLocaleDateString("ru") +
     "_" +
     new Date()
         .toLocaleTimeString("ru")
@@ -53,7 +25,7 @@ let log = <ExtendedLog>function(...arg: any[]): void {
     try {
         appendFileSync(logFileName, logTime() + ' - ' + arg.join(" ") + "\n")
     } catch (e) {
-
+        console.error(e)
     }
 }
 

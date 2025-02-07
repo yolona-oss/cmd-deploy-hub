@@ -1,4 +1,5 @@
-export interface IBalance {
-    currency: string;
-    balance: bigint;
-}
+//export interface IBalance {
+//    currency: string;
+//    balance: number;
+//}
+export type IBalance = number

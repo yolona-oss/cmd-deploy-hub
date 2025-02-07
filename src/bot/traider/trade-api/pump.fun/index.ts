@@ -1,15 +1,14 @@
-import { ITradeTxResult, TradeOffer, ITargetInfo, IBalance } from 'bot/traider/types';
+import { IPlatformResponce, TradeOffer, ITargetInfo, IBalance } from 'bot/traider/types';
 import { BaseTradeApi } from '../base-trade-api';
 
-// Export types
-export { TransactionMode } from './types';
-export type { WalletData, WalletGeneratorConfig, TransferResult } from './gen-wallets';
+import { TransactionMode } from './types';
+import type { WalletData, WalletGeneratorConfig, TransferResult } from './gen-wallets';
 
 // Export main functions
-export { pumpFunBuy, pumpFunSell } from './swap';
+import { pumpFunBuy, pumpFunSell } from './swap';
 
 // Export utility functions
-export {
+import {
     withRetry,
     getKeyPairFromPrivateKey,
     getCachedBlockhash,
@@ -19,7 +18,7 @@ export {
 } from './utils';
 
 // Export constants
-export {
+import {
     GLOBAL,
     FEE_RECIPIENT,
     TOKEN_PROGRAM_ID,
@@ -31,28 +30,26 @@ export {
 } from './constants';
 
 // Export API functions
-export { getCoinData } from './api';
+import { getCoinData } from './api';
 
 // Export Wallet Generator
-export { WalletGenerator } from './gen-wallets';
-
-import { WalletData } from './gen-wallets';
-import { getCoinData } from './api';
+import { WalletGenerator } from './gen-wallets';
+import { Connection, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 
 export class PumpFunTradeApi extends BaseTradeApi<WalletData, any> {
     constructor() {
         super("pump-fun")
     }
 
-    async TargetInfo(target: string): Promise<ITargetInfo> {
+    async targetInfo(target: string): Promise<ITargetInfo> {
         const coinData = await getCoinData(target);
 
         return {
-            MC: 0n,
-            CurPrice: 0n,
-            Volume: 0n,
-            CurSupply: 0n,
-            Holders: 0n,
+            MC: 0,
+            CurPrice: 0,
+            Volume: 0,
+            CurSupply: 0,
+            Holders: 0,
             trades: async () => {
                 return {
                     trades: [],
@@ -64,31 +61,68 @@ export class PumpFunTradeApi extends BaseTradeApi<WalletData, any> {
         }
     }
 
-    async Balance(traider: WalletData): Promise<IBalance> {
-        traider
-        return {
-            currency: "SOL",
-            balance: 0n
-        }
+    async balance(traider: WalletData): Promise<IBalance> {
+        const connection = new Connection(
+            `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`,
+            {
+                commitment: 'confirmed',
+                confirmTransactionInitialTimeout: 60000
+            }
+        );
+
+        const wallet = new PublicKey(traider.publicKey)
+        const balance = await connection.getBalance(wallet);
+
+        return balance * LAMPORTS_PER_SOL
     }
 
-    async buy(opt: TradeOffer<WalletData>): Promise<ITradeTxResult<any>> {
-        opt
+    async buy(opt: TradeOffer<WalletData>): Promise<IPlatformResponce<any>> {
+        let sign = ""
+        try {
+            sign = <string>(await pumpFunBuy(TransactionMode.Execution, opt.traider.secretKey, opt.target, opt.tx.price*opt.tx.quantity, opt.fee, opt.slippage))
+        } catch(e) {
+            console.log(e)
+            return {
+                signature: sign, 
+                error: e,
+                success: false,
+            }
+        }
+        
+
         return {
-            signature: "",
-            error: undefined,
-            results: undefined,
+            signature: sign,
             success: false,
         }
     }
 
-    async sell(opt: TradeOffer<WalletData>): Promise<ITradeTxResult<any>> {
-        opt
+    async sell(opt: TradeOffer<WalletData>): Promise<IPlatformResponce<any>> {
+        let sign = ""
+        try {
+            sign = <string>(await pumpFunSell(TransactionMode.Execution, opt.traider.secretKey, opt.target, opt.tx.price*opt.tx.quantity, opt.fee, opt.slippage))
+        } catch (e) {
+            console.log(e)
+            return {
+                signature: sign, 
+                error: e,
+                success: false,
+            }
+        }
         return {
-            signature: "",
-            error: undefined,
-            results: undefined,
+            signature: sign,
             success: false,
         }
     }
+
+    async createTraider(wallet: WalletData): Promise<void> {
+    }
+
+    async createTarget(_: string, __: string, ___: number): Promise<void> {
+        throw new Error("Not implemented")
+    }
+
+    async addBalance(src: WalletData, dst: WalletData, amount: number): Promise<void> {
+
+    }
+
 }

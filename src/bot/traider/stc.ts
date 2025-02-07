@@ -1,136 +1,173 @@
-import { ThreadPool } from "utils/thread-pool";
-
-import { BaseTradeApi } from "./trade-api/base-trade-api";
-
-import log from 'utils/logger'
-import { WithInit } from "types/with-init";
-import { ITradeTxType, Trade } from "./types";
-import { elapsedExec } from "utils/functional/elapced-exec";
-import { retrier } from "utils/async-tools";
-import { ITradeTxResult, TradeSide } from "./types/trade";
 import EventEmitter from "events";
-import { HMSTime } from "utils/time";
 
-export interface ISTCMetrics<TxResType = any> {
-    Trades: Array<Trade<TxResType>&{exec_time: number}>,
-    SuccessTrades: Array<Trade<TxResType>&{exec_time: number}>,
-    SellTrades: Array<Trade<TxResType>&{exec_time: number}>,
-    BuyTrades: Array<Trade<TxResType>&{exec_time: number}>,
-    ErrorTrades: Array<Trade<TxResType>&{exec_time: number}>,
-    ErrorRate: number,
-    BuyMeanPrice: bigint,
-    SellMeanPrice: bigint,
-    TotalBuyVolume: bigint,
-    TotalSellVolume: bigint,
-    TotalBuyVolumePrice: bigint,
-    TotalSellVolumePrice: bigint
+import { ThreadPool } from "utils/thread-pool";
+import { HMSTime } from "utils/time";
+import { WithInit } from "types/with-init";
+import { Trade, TradeOffer, TradeSide, TradeSideType } from "./types/trade";
+import { BaseTradeApi } from "./trade-api/base-trade-api";
+import { STCMetrics, ISTCMetrics } from "./stc-metric";
+
+import { ICommand } from "types/command";
+import { IClonable } from "types/clonable";
+import { Cloner } from "utils/cloner";
+import log from 'utils/logger'
+import { DEXWallet, ITraider } from "./types";
+import { IBaseTradeTarget } from "./types/trade-target";
+
+export interface CmdPushOfferOpts<TradeTarget extends IBaseTradeTarget = IBaseTradeTarget> {
+    trade: Omit<TradeOffer<TradeTarget>, "traider">
+    exe?: {
+        declineIf?: (wallet: DEXWallet, trade: Omit<TradeOffer<TradeTarget>, "traider">) => Promise<boolean>
+        declineCascade?: boolean
+    }
+    setup?: {
+        delay?: number,
+        retries?: number,
+        timeout?: number
+    }
 }
 
-// TODO: remove trades array and save data exacly in the metrics
-export class STCMetrics<TxResType = any> {
-    protected trades: Array<Trade<TxResType>&{exec_time: number}> = []
+class OfferCmd<TradeTarget extends IBaseTradeTarget = IBaseTradeTarget> extends EventEmitter implements ICommand<void> {
+    private id: string
+    private api: BaseTradeApi<TradeTarget, any>
+    private cmd_opt: CmdPushOfferOpts<TradeTarget>
+    private traider: ITraider
+    private side: TradeSideType
 
-    public reset() {
-        this.trades = []
+    constructor(config: {
+        id: string,
+        api: BaseTradeApi<TradeTarget, any>,
+        opt: CmdPushOfferOpts<TradeTarget>,
+        traider: ITraider,
+        side: TradeSideType
+    }) {
+        super()
+        this.id = config.id
+        this.api = config.api.clone()
+        this.cmd_opt = Object.assign({}, config.opt)
+        this.traider = Object.assign({}, config.traider)
+        this.side = config.side
     }
 
-    public addTrade(trade: Trade&{exec_time: number}) {
-        this.trades.push(trade)
-    }
+    async execute() {
+        const trade = this.cmd_opt.trade
+        const { target, tx } = trade
+        const { exe } = this.cmd_opt
+        const id = this.id
 
-    public Trades() {
-        return this.trades
-    }
+        const offerFn = this.side === TradeSide.Buy ? this.api.buy : this.api.sell
 
-    public SuccessTrades() {
-        return this.trades.filter(t => t.result.success)
-    }
-
-    public SellTrades(successonly = true) {
-        return this.trades.filter(t => t.side === "SELL" && (!successonly || t.result.success))
-    }
-
-    public BuyTrades(successonly = true) {
-        return this.trades.filter(t => t.side === "BUY" && (!successonly || t.result.success))
-    }
-
-    public ErrorTrades() {
-        return this.trades.filter(t => !t.result.success)
-    }
-
-    public ErrorRate() {
-        return this.ErrorTrades().length / this.trades.length
-    }
-
-    public BuyMeanPrice(): bigint {
-        return BigInt(
-            this.BuyTrades(true)
-                .reduce((acc: bigint, trade) => acc + trade.value.price, BigInt(0)) / BigInt(this.BuyTrades().length)
-        )
-    }
-
-    public SellMeanPrice(): bigint {
-        return this.SellTrades(true)
-            .reduce((acc: bigint, trade) => acc + trade.value.price, BigInt(0)) / BigInt(this.SellTrades().length)
-    }
-
-    public TotalBuyVolume(): bigint {
-        return this.BuyTrades(true)
-            .reduce((acc: bigint, trade) => acc + trade.value.quantity, BigInt(0))
-    }
-
-    public TotalSellVolume(): bigint {
-        return this.SellTrades(true)
-            .reduce((acc: bigint, trade) => acc + trade.value.quantity, BigInt(0))
-    }
-
-    public TotalBuyVolumePrice(): bigint {
-        return this.BuyMeanPrice() * this.TotalBuyVolume()
-    }
-
-    public TotalSellVolumePrice(): bigint {
-        return this.SellMeanPrice() * this.TotalSellVolume()
-    }
-
-    public agregate(): ISTCMetrics<TxResType> {
-        return {
-            Trades: this.trades,
-            SuccessTrades: this.SuccessTrades(),
-            SellTrades: this.SellTrades(),
-            BuyTrades: this.BuyTrades(),
-            ErrorTrades: this.ErrorTrades(),
-            ErrorRate: this.ErrorRate(),
-            BuyMeanPrice: this.BuyMeanPrice(),
-            SellMeanPrice: this.SellMeanPrice(),
-            TotalBuyVolume: this.TotalBuyVolume(),
-            TotalSellVolume: this.TotalSellVolume(),
-            TotalBuyVolumePrice: this.TotalBuyVolumePrice(),
-            TotalSellVolumePrice: this.TotalSellVolumePrice(),
+        if (exe?.declineIf) {
+            if (await exe.declineIf(this.traider.wallet, this.cmd_opt.trade)) {
+                if (exe.declineCascade) {
+                    this.emit("DropAll", id)
+                    return
+                }
+                this.emit("DropOne", id)
+                return
+            }
         }
+
+        const start = performance.now()
+        let exeResult
+        let error
+        try {
+            exeResult = await offerFn({
+                ...trade,
+                traider: this.traider
+            })
+        } catch (e) {
+            error = e
+            log.error("OfferCmd::execute():", e)
+        }
+
+        const result = exeResult === null || exeResult === undefined ?
+            { success: false, error: error }
+            :
+            exeResult
+
+        const mappedTx = {
+            time: Date.now(),
+            target: target,
+            side: TradeSide.Sell,
+            value: tx,
+            result
+        }
+
+        this.emit("Done", id, mappedTx, performance.now() - start)
     }
 }
 
 // TODO: add options to stop trading with some signals form the outside or
 //       by some other means like exchange events or exchange curve crashes
-export abstract class SlaveTraderCtrl<TradeAPI extends BaseTradeApi<WalletType, TxResType>, WalletType extends object, TxResType> extends WithInit {
+export abstract class SlaveTraderCtrl<
+            TradeAPI extends BaseTradeApi<TradeTarget, PlatformResData> = BaseTradeApi,
+            TradeTarget extends IBaseTradeTarget = IBaseTradeTarget,
+            PlatformResData = never>
+        extends WithInit implements IClonable {
     static slaveOrdinaryNumber = 0
 
+    protected tradeApi: TradeAPI
     protected threadPool: ThreadPool
-    protected _metrics: STCMetrics<TxResType>
+    protected _metrics: STCMetrics<TradeTarget, PlatformResData>
 
-    onbuy: (trade: Trade<TxResType>) => void  = () => {}
-    onsell: (trade: Trade<TxResType>) => void = () => {}
+    protected traider: ITraider
+
+    onbuy: (trade: Trade<TradeTarget, PlatformResData>) => void  = () => {}
+    onsell: (trade: Trade<TradeTarget, PlatformResData>) => void = () => {}
 
     constructor(
-        private tradeApi: TradeAPI,
-        protected wallet: WalletType,
+        tradeApi: TradeAPI,
+        wallet: DEXWallet
     ) {
         super()
+        this.tradeApi = tradeApi.clone()
         this.threadPool = new ThreadPool()
         this._metrics = new STCMetrics()
+        this.traider = {
+            wallet: wallet
+        }
+        this.setUninitialized()
+
+        //setInterval(() => {
+        //    console.log(this.metrics())
+        //}, 1000)
     }
 
-    public metrics(): ISTCMetrics<TxResType> {
+    abstract clone(): SlaveTraderCtrl<TradeAPI, TradeTarget, PlatformResData>
+
+    public get Wallet(): DEXWallet {
+        return new Cloner(this.traider.wallet).clone()
+    }
+
+    public async canPerformTradeSequence(offers: TradeOffer[]): Promise<{
+        success: boolean
+        rest: number
+        balance: number
+        avgFee: number
+        avgSlippage: number
+        avgPrice: number
+        avgQuantity: number
+    }> {
+        const avgFee = offers.reduce((acc, o: TradeOffer) => acc + (o.fee ?? 0), 0) / offers.length
+        const avgSlippage = offers.reduce((acc, o: TradeOffer) => acc + (o.slippage ?? 0), 0) / offers.length
+        const avgPrice = offers.reduce((acc, o: TradeOffer) => acc + o.tx.price, 0) / offers.length
+        const avgQuantity = offers.reduce((acc, o: TradeOffer) => acc + o.tx.quantity, 0) / offers.length
+
+        const balance = await this.tradeApi.balance(this.traider.wallet)
+
+        return {
+            success: balance > avgFee + avgSlippage + avgPrice * avgQuantity,
+            rest: balance - avgFee - avgSlippage - avgPrice * avgQuantity,
+            balance,
+            avgFee,
+            avgSlippage,
+            avgPrice,
+            avgQuantity
+        }
+    }
+
+    public metrics(): ISTCMetrics<TradeTarget, PlatformResData> {
         return this._metrics.agregate()
     }
 
@@ -139,7 +176,7 @@ export abstract class SlaveTraderCtrl<TradeAPI extends BaseTradeApi<WalletType, 
     */
     async stop(forse: boolean = false) {
         if (this.threadPool.getMetrics().totalTasks > 0 && !forse) {
-            await this.threadPool.waitTasks()
+            await this.threadPool.waitAll()
         }
         await this.threadPool.terminate()
         this.setUninitialized()
@@ -153,99 +190,74 @@ export abstract class SlaveTraderCtrl<TradeAPI extends BaseTradeApi<WalletType, 
         SlaveTraderCtrl.slaveOrdinaryNumber++
         log.echo(`Initializing trading slave. Ordinary number: ${SlaveTraderCtrl.slaveOrdinaryNumber}.`)
         this.threadPool.run()
-        //try {
-        //    log.echo(`Connecting to platform ${this.tradeApi.name}...`)
-        //    await this.tradeApi.connect(this.apiKey, this.secret)
-        //} catch (e) {
-        //    throw `Failed to connect to platform ${this.tradeApi.name}: ${JSON.stringify(e,null,4)}`
-        //}
-        //log.echo(`Connected to platform ${this.tradeApi}`)
-        this.threadPool.run()
 
         this.setInitialized()
     }
 
-    pushSell(opt: {target: string, tx: ITradeTxType, slippage?: bigint, fee?: any}, delay?: number): string {
-        const id = `${SlaveTraderCtrl.slaveOrdinaryNumber}-sell-${opt.target}`
+    async pushBoth(opt: CmdPushOfferOpts<TradeTarget>) {
+        if (!opt.exe) {
+            opt.exe = { }
+        }
+        const sellId = this.pushSell(opt)
+        this.pushBuy(opt, sellId)
+    }
+
+    pushSell(opt: CmdPushOfferOpts<TradeTarget>, afterId?: string) {
+        return this.pushOffer(opt, TradeSide.Sell, afterId)
+    }
+
+    pushBuy(opt: CmdPushOfferOpts<TradeTarget>, afterId?: string) {
+        return this.pushOffer(opt, TradeSide.Buy, afterId)
+    }
+
+    private pushOffer(
+        opt: CmdPushOfferOpts<TradeTarget>,
+        side: TradeSideType,
+        afterId?: string
+    ) {
+        const delay = opt.setup?.delay
+        //const retries = opt.setup?.retries || 1
+        //const timeout = opt.setup?.timeout
+        const id = `${SlaveTraderCtrl.slaveOrdinaryNumber}-${side}-${opt.trade.target}-${this.threadPool.genId()}`
+
+        const cmd = new OfferCmd<TradeTarget>({
+            id, opt, side,
+            api: this.tradeApi,
+            traider: this.traider
+        })
+
+        cmd.on("Done", this._handleCmdDone.bind(this))
+        cmd.on('DropOne', this._handleCmdDrop.bind(this))
+        cmd.on('DropAll', this._handleCmdDropAll.bind(this))
+
         this.threadPool.enqueue({
             id,
             delay: delay ? new HMSTime({milliseconds: delay}) : undefined,
-            command: {
-                execute: async () => {
-                    const { elapsed, result } = await elapsedExec(
-                        retrier<ITradeTxResult<TxResType>>(
-                            () => this.tradeApi.sell({
-                                ...opt,
-                                traider: this.wallet,
-                            }),
-                            {
-                                retries: 1,
-                                timeout: 4000
-                            }
-                        )
-                    )
-                    this._metrics.addTrade({
-                        symbol: opt.target, // todo
-                        target: opt.target,
-                        side: TradeSide.Sell,
-                        value: opt.tx,
-                        result,
-                        exec_time: elapsed
-                    })
-                    if (result.success) {
-                        this.onsell({
-                            symbol: opt.target, // todo
-                            target: opt.target,
-                            side: TradeSide.Sell,
-                            value: opt.tx,
-                            result,
-                        })
-                    }
-                }
-            }
+            command: cmd,
+            after: afterId
         })
         return id
     }
 
-    pushBuy(opt: {target: string, tx: ITradeTxType, slippage?: bigint, fee?: any}, delay?: number): string {
-        const id = `${SlaveTraderCtrl.slaveOrdinaryNumber}-buy-${opt.target}`
-        this.threadPool.enqueue({
-            id,
-            delay: delay ? new HMSTime({milliseconds: delay}) : undefined,
-            command: {
-                execute: async () => {
-                    const { elapsed, result } = await elapsedExec(
-                        retrier<ITradeTxResult<TxResType>>(
-                            () => this.tradeApi.buy({
-                                ...opt,
-                                traider: this.wallet
-                            }),
-                            {
-                                retries: 1,
-                                timeout: 4000
-                            }
-                        )
-                    )
-                    this._metrics.addTrade({
-                        symbol: opt.target, // todo
-                        target: opt.target,
-                        side: TradeSide.Buy,
-                        value: opt.tx,
-                        result,
-                        exec_time: elapsed
-                    })
-                    if (result.success) {
-                        this.onbuy({
-                            symbol: opt.target, // todo
-                            target: opt.target,
-                            side: TradeSide.Buy,
-                            value: opt.tx,
-                            result,
-                        })
-                    }
-                }
-            }
-        })
-        return id;
+    private _handleCmdDone(id: string, tx: Trade<TradeTarget, PlatformResData>, execTime: number) {
+        console.log(`"${id}" done. success: ${tx.result.success}`)
+        this._metrics.addTrade({...tx, exec_time: execTime})
+        if (tx.side === TradeSide.Sell) {
+            this.onsell(tx)
+        } else {
+            this.onbuy(tx)
+        }
+    }
+
+    private _handleCmdDrop(id: string) {
+        console.log(`"${id}" dropped.`)
+        this._metrics.increaseDroped()
+    }
+
+    private _handleCmdDropAll(id: string) {
+        console.log(`after "${id}" all dropped.`)
+        const {droped, unDropable} = this.threadPool.dropTasks()
+        console.log(`"${unDropable}" already in execution pipeline. ${droped} dropped.`)
+        this._metrics.increaseDroped(droped)
     }
 }
