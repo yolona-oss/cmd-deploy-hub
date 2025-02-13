@@ -9,13 +9,10 @@ export type PlatformTradeDocument = PlatformTradeEntity & Document;
 })
 export class PlatformTradeEntity {
     @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'PlatformTraider', required: true })
-    initiator: mongoose.Schema.Types.ObjectId;
-
-    @Prop({ type: String, required: true })
-    symbol: string;
+    initiator_id: mongoose.Schema.Types.ObjectId;
 
     @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'PlatformTarget', required: true })
-    target: mongoose.Schema.Types.ObjectId;
+    target_id: mongoose.Schema.Types.ObjectId;
 
     @Prop({ type:
         {

@@ -12,9 +12,8 @@ import { FilesWrapper, Manager } from 'db';
 
 export class CLIUI extends WithInit implements IUI<CLIContext> {
     private context: CLIContext;
-
+    private rl?: readline.Interface
     private isActive: boolean = false
-
     private cmds: string[]
 
     constructor(
@@ -27,7 +26,7 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
             userSession: { state: '', data: {} },
             text: "",
             reply: async (message: string) => {
-                console.log(":: " + message);
+                console.log('[' + new Date().toLocaleTimeString("ru") + ']' + "[CLI] < " + message);
             }
         };
         this.cmds = this.commandHandler.mapHandlersToCommands().map(cmd => cmd.command)
@@ -67,16 +66,17 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
                 name: "CliAdmin",
                 userId: -1,
                 online: false,
-                avatar: (await FilesWrapper.getDefaultAvatar()).id,
+                avatar: (await FilesWrapper.getDefaultAvatar())!.id,
                 useGreeting: true
             })
         }
         this.context.manager = manager
 
-        const rl = readline.createInterface({
+        this.rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,
-            prompt: 'cmdhub;> ',
+            historySize: 100,
+            prompt: "[CLI] >",
             completer: (line: string) => {
                 const completions = this.cmds.filter((c) => c.startsWith(line));
                 return completions
@@ -85,7 +85,7 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
 
         log.echo("Starting CLI...")
 
-        rl.on('line', async (line) => {
+        this.rl.on('line', async (line) => {
             this.context.text = line;
             const [command, ...args] = line.split(' ');
             this.context.userSession.data.args = args; // Save args in context
@@ -103,6 +103,11 @@ export class CLIUI extends WithInit implements IUI<CLIContext> {
         if (!this.isActive) {
             throw new Error("CLIUI::terminate() not running")
         }
+        if (this.rl) {
+            this.rl.close()
+        }
+        await this.commandHandler.stop()
         this.isActive = false
+        log.echo(" -- CLI ui stopped");
     }
 }

@@ -2,15 +2,15 @@ export type ExTimeRangeMin = "1m" | "3m" | "5m" | "15m" | "30m" | "45m"
 export type ExTimeRangeHours = "1h" | "2h" | "3h" | "4h"
 export type ExTimeRangeDays = "1d" | "1w" | "1mon"
 
-export type ExTimeRange = ExTimeRangeMin | ExTimeRangeHours | ExTimeRangeDays
+export type ExTimeRangeType = ExTimeRangeMin | ExTimeRangeHours | ExTimeRangeDays
 
 export interface TimeRangeValue {
-    range: ExTimeRange
+    range: ExTimeRangeType
     start: number
     end: number
 }
 
-export function exTimeRangeToMilliseconds(range: ExTimeRange) {
+export function exTimeRangeToMilliseconds(range: ExTimeRangeType) {
     if (range.match(/m$/)) {
         return Number(range.replace(/m$/, "")) * 60 * 1000
     }
@@ -34,13 +34,13 @@ export function exTimeRangeToMilliseconds(range: ExTimeRange) {
     return -1
 }
 
-export function isExDateInRange(start: number, end: number, range: ExTimeRange) {
+export function isExDateInRange(start: number, end: number, range: ExTimeRangeType) {
     const diff = end - start
     const rDiff = exTimeRangeToMilliseconds(range)
     return diff <= rDiff
 }
 
-export function isExDateOutOfRange(start: number, end: number, range: ExTimeRange) {
+export function isExDateOutOfRange(start: number, end: number, range: ExTimeRangeType) {
     const diff = end - start
     const rDiff = exTimeRangeToMilliseconds(range)
     return diff > rDiff

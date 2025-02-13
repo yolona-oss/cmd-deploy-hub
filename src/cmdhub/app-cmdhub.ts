@@ -39,6 +39,8 @@ export class AppCmdhub extends Application<BaseUIContext> {
     }
 
     async Initialize(): Promise<void> {
+        await super.Initialize()
+
         log.echo(`Initializing Application with UI: ${this.ui.ContextType()}...`)
 
         //log.echo("Creating lock file for UI...")
@@ -48,6 +50,6 @@ export class AppCmdhub extends Application<BaseUIContext> {
         //    process.exit(-1)
         //}
 
-        this.setInitialized()
+        super.setInitialized()
     }
 }

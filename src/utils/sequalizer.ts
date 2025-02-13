@@ -1,11 +1,12 @@
 import { IRunnable } from "types/runnable";
-import log from "utils/logger"
 import { HMSTime, sleep } from 'utils/time'
 
 import { ICommand } from 'types/command'
 import { AbstractState } from "types/state";
 import { Identificable } from "types/identificable";
 import EventEmitter from "events";
+
+import log from "utils/logger"
 
 type ITask<CmdRes = void, DataType = never> = {
     command: ICommand<CmdRes>;
@@ -14,9 +15,10 @@ type ITask<CmdRes = void, DataType = never> = {
     delay?: HMSTime;
 } & Identificable;
 
-interface ThreadPoolMetrics {
+interface SequalizerMetrics {
     activeTasks: number
     totalTasks: number
+    awaitingTasks: number
     processedTasks: number
     errors: number
     avgExecTime: number
@@ -26,13 +28,14 @@ interface ThreadPoolMetrics {
 
 class TPCtx {
     private state: TPState
-    private _metrics: ThreadPoolMetrics
+    private _metrics: SequalizerMetrics
 
     constructor(state: TPState) {
         this.state = state
         this._metrics = {
             activeTasks: 0,
             totalTasks: 0,
+            awaitingTasks: 0,
             processedTasks: 0,
             errors: 0,
             avgExecTime: 0,
@@ -54,7 +57,7 @@ class TPCtx {
         this.state.setConcurrency(concurrency)
     }
 
-    public metrics(): ThreadPoolMetrics {
+    public metrics(): SequalizerMetrics {
         return this._metrics
     }
 
@@ -68,6 +71,14 @@ class TPCtx {
         this._metrics.activeTasks--
         this._metrics.totalTasks--
         this._metrics.processedTasks++
+    }
+
+    public incrementAwaitingTasks() {
+        this._metrics.awaitingTasks++
+    }
+
+    public decrementAwaitingTasks(v = 1) {
+        this._metrics.awaitingTasks -= v
     }
 
     public updateError(e: any) {
@@ -108,8 +119,9 @@ class TPState extends AbstractState<TPCtx> implements ITPState {
     }
 }
 
-export class ThreadPool implements IRunnable {
+export class Sequalizer implements IRunnable {
     private active: boolean = false
+    private executingTasksId = new Array<string>
     private taskQueue: ITask<any, any>[] = []
 
     // rename me plz:>
@@ -146,13 +158,20 @@ export class ThreadPool implements IRunnable {
     }
 
     // NOTE: maybe create array of active id and search in those array and current taskQueue for required id or push reject
-    public waitTask(id: string, timeout: number = 10000): Promise<void> {
+    waitTask(id: string, timeout: number = 10000): Promise<void> {
         return new Promise((resolve, reject) => {
             this.emitter.once(`task-${id}-done`, () => resolve())
             if (timeout) {
-                setTimeout(() => reject("ThreadPool::waitTask() timeout"), timeout)
+                setTimeout(() => reject("Sequalizer::waitTask() timeout"), timeout)
             }
         })
+    }
+
+    async waitTasksWithIdMatch(match: string) {
+        const matchs = this.executingTasksId.filter((exeId) => exeId.includes(match))
+        return await Promise.all(
+            matchs.map(this.waitTask)
+        )
     }
 
     public dropTasks(): {
@@ -164,6 +183,7 @@ export class ThreadPool implements IRunnable {
 
         for (const waitId of this.awaitingTasksId) {
             this.emitter.removeAllListeners(`__${waitId}`)
+            this.ctx.decrementAwaitingTasks(this.ctx.metrics().activeTasks)
         }
 
         this.ctx.metrics().totalTasks = 0
@@ -173,7 +193,7 @@ export class ThreadPool implements IRunnable {
         }
     }
 
-    public getMetrics(): ThreadPoolMetrics {
+    public getMetrics(): SequalizerMetrics {
         return Object.assign({}, this.ctx.metrics())
     }
 
@@ -188,9 +208,13 @@ export class ThreadPool implements IRunnable {
         this.id_history.push(id)
     }
 
+    async immidiate<T>({command}: ITask<T>): Promise<T> {
+        return await command.execute()
+    }
+
     enqueue<T>(task: ITask<T>): void {
         if (!this.active) {
-            throw new Error("ThreadPool::enqueue() ThreadPool is not running")
+            throw new Error("Sequalizer::enqueue() Sequalizer is not running")
         }
 
         const { after } = task
@@ -198,17 +222,26 @@ export class ThreadPool implements IRunnable {
         this.ctx.metrics().totalTasks++
 
         if (after) {
-            if (!this.id_history.includes(after)) {
+            if (this.id_history.includes(after)) {
+                this.taskQueue.push(task)
+            } else {
                 this.awaitingTasksId.push(after)
-                this.emitter.once(`__${after}`, () => {
-                    this.taskQueue.push(task)
+                this.ctx.incrementAwaitingTasks()
+
+                this.emitter.once(`__${after}`, (success) => {
+                    this.ctx.decrementAwaitingTasks()
                     this.awaitingTasksId.splice(this.awaitingTasksId.indexOf(after), 1)
+                    if (success) {
+                        this.taskQueue.push(task)
+                    } else {
+                        console.log("cascade drop: awaiting task failed")
+                        this.ctx.metrics().totalTasks--
+                    }
                 })
             }
         } else {
             this.taskQueue.push(task)
         }
-
 
         //return new Promise((resolve, reject) => {
         //    const boundExecute = async () => {
@@ -276,6 +309,8 @@ export class ThreadPool implements IRunnable {
         const task = this.taskQueue.shift()!
         this.ctx.metrics().activeTasks++
 
+        this.executingTasksId.push(task.id)
+
         let isTaskError = false
         try {
             if (task.delay) {
@@ -287,11 +322,14 @@ export class ThreadPool implements IRunnable {
         } catch(e: any) {
             isTaskError = true
             this.ctx.updateError(e)
-            log.error(`ThreadPool::processQueue() error: ${e}`)
+            log.error(`Sequalizer::processQueue() error: ${e}`)
         } finally {
             this.addToHistory(String(task.id))
+            this.executingTasksId.splice(this.executingTasksId.indexOf(task.id), 1)
+
             this.emitter.emit(`task-${task.id}-done`, isTaskError)
-            this.emitter.emit(`__${task.id}`)
+            this.emitter.emit(`__${task.id}`, !isTaskError)
+
             // in next tick remove listners
             setTimeout(() => this.emitter.removeAllListeners(`task-${task.id}-done`))
             this.ctx.updateTaskDone()
@@ -301,7 +339,7 @@ export class ThreadPool implements IRunnable {
 
     public async run() {
         if (this.active) {
-            log.warn("ThreadPool::run() called when already active")
+            log.warn("Sequalizer::run() called when already active")
             return
         }
 
@@ -311,7 +349,7 @@ export class ThreadPool implements IRunnable {
 
     public async terminate() {
         if (this.active == false) {
-            log.warn("ThreadPool::terminate() called when not active")
+            log.warn("Sequalizer::terminate() called when not active")
             return
         }
         this.active = false

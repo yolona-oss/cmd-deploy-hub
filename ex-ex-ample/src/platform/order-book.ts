@@ -49,27 +49,50 @@ export class OrderBook extends EventEmitter<any> {
             ob.push({ fromWallet: wallet, price, quantity });
         }
 
-        const tolerEntries = obInverse.filter(v => v.price === price && v.fromWallet.publicKey !== wallet.publicKey)
+        let tolerEntries: IOrderBookEntry[] = []
+        for (const te of obInverse) {
+            if (te.fromWallet.publicKey === wallet.publicKey)
+                continue
 
-        for (let i = 0; i < tolerEntries.length; i++) {
+            if (te.price === price) {
+                tolerEntries.push(te)
+            }
+            //if (side === TradeSide.Sell && te.price >= price) {
+            //    tolerEntries.push(te)
+            //} else if (te.price === price) {
+            //    tolerEntries.push(te)
+            //}
+        }
+        tolerEntries.sort((a, b) => a.price - b.price) // from low to high
+
+        //let avgPrice = 0
+        for (let i = 0; i < tolerEntries.length && quantity > 0; i++) {
             let curTolerEntry = tolerEntries[i]
             if (tolerEntries[i].quantity <= quantity) {
                 quantity -= curTolerEntry.quantity;
+                // close order
                 this.emit("change", { side, ...curTolerEntry, diff: curTolerEntry.quantity })
-                obInverse.splice(obInverse.indexOf(curTolerEntry), 1)
+                obInverse = obInverse.filter(e => e !== curTolerEntry)
                 i--;
             } else {
                 const change = curTolerEntry.quantity - quantity
                 this.emit("change", { side, ...curTolerEntry, diff: curTolerEntry.quantity - change })
-                curTolerEntry.quantity = change
+                obInverse.find(e =>
+                    e.price === curTolerEntry.price &&
+                        e.fromWallet.publicKey === curTolerEntry.fromWallet.publicKey &&
+                        e.quantity === curTolerEntry.quantity)!.quantity = change
+                quantity = 0
             }
         }
 
         if (quantity === 0) {
-            this.emit("change", { side: TradeSide.Sell, fromWallet: wallet, price, diff: initalQuantity })
             ob = ob.filter(e => e.quantity > 0);
+            this.emit("change", { side: TradeSide.Sell, fromWallet: wallet, price, diff: initalQuantity })
         } else {
-            this.emit("change", { side: TradeSide.Sell, fromWallet: wallet, price, diff: initalQuantity - quantity })
+            const diff = initalQuantity - quantity
+            if (diff != 0) {
+                this.emit("change", { side: TradeSide.Sell, fromWallet: wallet, price, diff })
+            }
         }
     }
 

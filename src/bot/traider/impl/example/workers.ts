@@ -1,55 +1,42 @@
 import { SlaveTraderCtrl } from "../../stc";
-import { MasterTraderCtrl, MTCContext, MTCState } from "../../mtc";
-import { ExampleTradeApi } from "./api";
-import { ExExTargetType } from "./target-type";
-import { DEXWallet } from "bot/traider/types";
+import { MasterTraderCtrl } from "../../mtc";
+import { ExampleTradeApi, MAIN_TOKEN_NAME } from "./api";
+import { ExExAssetType } from "./asset-type";
+import { IDEXWallet, ITraider } from "bot/traider/types";
+import { Sequalizer } from "utils/sequalizer";
 
-export class ExampleSTC extends SlaveTraderCtrl<ExampleTradeApi, ExExTargetType, any> {
-    constructor(wallet: DEXWallet, api: ExampleTradeApi) {
-        super(api, wallet)
-    }
-
-    clone() {
-        return new ExampleSTC(this.traider.wallet, this.tradeApi)
-    }
-}
-
-class EMTC_CommonState extends MTCState {
-    constructor() {
-        super()
-    }
-}
-
-class EMTCCtx extends MTCContext {
-    constructor(state: EMTC_CommonState) {
-        super(state)
-    }
-}
-
-export class ExampleMTC extends MasterTraderCtrl<ExampleTradeApi, ExExTargetType, any> {
+export class ExampleSTC extends SlaveTraderCtrl<ExampleTradeApi, ExExAssetType, any> {
     constructor(
-        target: ExExTargetType,
-        wallets: Array<DEXWallet>,
+        id: string,
+        wallet: IDEXWallet,
+        api: ExampleTradeApi,
+        sequalizer?: Sequalizer
     ) {
-        const slaves: Array<SlaveTraderCtrl<ExampleTradeApi, ExExTargetType, any>> = []
-        wallets.forEach((w) => {
-            const slave = new ExampleSTC(w, new ExampleTradeApi())
-            slave.Initialize()
-            slaves.push(slave)
-        })
+        super(id, api, wallet, MAIN_TOKEN_NAME, sequalizer)
+    }
+
+    override clone(id: string, traider: ITraider): SlaveTraderCtrl<ExampleTradeApi, ExExAssetType, any> {
+        return new ExampleSTC(id, traider.wallet, this.tradeApi.clone(), this.sequalizer)
+    }
+}
+
+export class ExampleMTC extends MasterTraderCtrl<ExampleTradeApi, ExExAssetType, any> {
+    constructor(config:
+        {
+            id: string,
+            asset: ExExAssetType,
+            initialSalves?: Array<SlaveTraderCtrl<ExampleTradeApi, ExExAssetType, any>>
+        }
+    ) {
         super(
-            target,
-            slaves,
+            config.asset,
+            config.initialSalves ?? [],
             new ExampleTradeApi(),
-            new EMTCCtx(new EMTC_CommonState())
+            config.id
         )
     }
 
-    clone() {
-        return new ExampleMTC(this.target, [])
-    }
-
-    async terminate(): Promise<void> {
-        await super.terminate()
+    override clone(id: string, asset: ExExAssetType, newSlaves?: Array<SlaveTraderCtrl<ExampleTradeApi, ExExAssetType, any>>): MasterTraderCtrl<ExampleTradeApi, ExExAssetType, any> {
+        return new ExampleMTC({id, asset, initialSalves: newSlaves ?? []})
     }
 }

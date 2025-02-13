@@ -2,13 +2,13 @@ import {
     DefaultSeqCommandsEnum,
     DefaultServiceCommandsEnum,
     DefaultAccountCommandsEnum,
+    DefaultHelpCommandsEnum,
 } from "constants/command";
-import { assignToCustomPath, extractValueFromObject } from 'utils/object'
-import { IAccount } from "db";
+import { Account } from "db";
 import { WithInit } from "types/with-init";
 import { BaseUIContext, IUICommandSimple } from "ui/types";
 import { Node, Graph, printGraph } from "utils/graf";
-import { WithNeighbors } from "types/with-neighbors";
+import { WithNeighbors, validateWithNeighborsMap } from "types/with-neighbors";
 import { SequenceHandler } from "./sequence-handler";
 import log from 'utils/logger'
 import { BaseCommandService } from "./command-service";
@@ -26,9 +26,16 @@ interface IHandleCallback<Ctx> extends Partial<WithNeighbors> {
 
 type IHandlerCommand = IUICommandSimple & Partial<WithNeighbors>
 
+const DefaultCommands = [
+    ...Object.values(DefaultSeqCommandsEnum),
+    ...Object.values(DefaultServiceCommandsEnum),
+    ...Object.values(DefaultAccountCommandsEnum),
+    ...Object.values(DefaultHelpCommandsEnum)
+]
+
 // TODO its have tooooooooooooo many if else
 export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
-    private callbacks: Map<string, IHandleCallback<TContext>>
+    private callbacks: Map<string, IHandleCallback<TContext>> // name -> callback
     private sequenceHandler?: SequenceHandler
 
     private activeServices: Map<string, Array<BaseCommandService<any>>> = new Map() // userId -> services
@@ -36,6 +43,49 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
     constructor() {
         super()
         this.callbacks = new Map();
+    }
+
+    done() {
+        const graph = this.createCommandSequenceGraph();
+
+        printGraph(graph)
+
+        if (!validateWithNeighborsMap(this.callbacks)) {
+            throw new Error("CommandHandler::done() invalid callbacks map");
+        }
+
+        const targets = this.callbacks.keys().toArray()
+        const naighbors = this.callbacks.values().toArray()
+        this.sequenceHandler = new SequenceHandler(
+            Array.from(
+                targets.map((v, i) =>
+                    ({
+                        target: v,
+                        next: naighbors[i].next,
+                        prev: naighbors[i].prev
+                    })
+                )
+            )
+        )
+
+        this.setInitialized()
+    }
+
+    async stop() {
+        for (const [userId, services] of this.activeServices) {
+            log.echo(" -- Stoping services for user: " + userId)
+            const terminatePromises = []
+            for (const s of services) {
+                log.echo("  -- terminating service: " + s.name)
+                await s.terminate()
+                terminatePromises.push(
+                    new Promise(resolve => s.on("done", resolve))
+                )
+            }
+            await Promise.all(terminatePromises)
+            log.echo("  -- All services for user: " + userId + " stopped")
+        }
+        log.echo(" -- All services stopped")
     }
 
     public registerMany(commands: Array<{
@@ -58,97 +108,75 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
         );
     }
 
-    // return error string or void on success
-    //
-    // TODO its tooooooo huge and rediculus func(((((((((~_~)))))))))
+    /**
+     * @returns {Promise<string|void>} on success return nothing, otherwise return error message string
+     */
     public async handleCommand(command: string, ctx: TContext): Promise<string | void> {
         const cb = this.callbacks.get(command);
         const arg = this.getArgs(ctx.text!)
         const _userId = ctx.manager?.userId
-        const userId = ctx.manager!.userId
+        const userId = String(_userId)
 
         if (!_userId) {
-            return "No user id."
+            return "CommandHandler.handleCommand() No user id."
         }
 
-        let err
-        try {
-            err = this.sequenceHandler!.handle(userId, command)
-        } catch (e) {
-            log.error(`Sequence handling error: ` + JSON.stringify(e, null, 4))
-            err = JSON.stringify(e, null, 4)
-        }
-        if (err) { // err or default seq comands passed :) im too smart :_)
-            return err
+        if (!cb && !DefaultCommands.includes(command)) {
+            return 'CommandHandler.handleCommand() Unknown command "' + command + '".';
         }
 
-        switch (command) {
-            case DefaultAccountCommandsEnum.CREATE_VARIABLE:
-                let curData = (await ctx.manager!.populate<{account: IAccount}>("account")).account.data
-                const assignedData = assignToCustomPath(curData, arg[0], arg[1])
-                await ctx.manager!.updateOne({ account: { data: assignedData }})
-                return "Variable created. Current data for context:\n" + JSON.stringify(assignedData, null, 4)
-            case DefaultAccountCommandsEnum.REMOVE_VARIABLE:
-                return "Not implemented."
-        }
+        // ---- Builtin cmd handling START
+        // must be in this order sequence -> account -> service
+        const defaultCmdHandlers = [
+            this.handleHelpCommand,
+            this.handleSequenceCommand,
+            this.handleAccountCommand,
+            this.handleServiceCommand,
+        ]
 
-        // stop services
-        if (command === DefaultServiceCommandsEnum.STOP_COMMAND) {
-            const splited = ctx.text!.trim().split(" ")
-            if (splited.length <= 1) {
-                return "No service name passed"
-            }
-            const service = splited[1]
-            if (this.activeServices.get(String(userId))!.map(serv => serv.name).includes(service)) {
-                await this.activeServices.get(String(userId))!.
-                find(serv => serv.name === service)!.terminate()
-                this.activeServices.get(String(userId))!.
-                    splice(
-                        this.activeServices.get(String(userId))!.map(serv => serv.name).indexOf(service),
-                        1
-                    )
-                return "Service stopped."
-            } else {
-                return `Service ${service} not active.`
+        for (const handler of defaultCmdHandlers) {
+            const res = await handler.bind(this)(command, ctx, userId, arg)
+            if (res) {
+                return res
             }
         }
+        // ---- Builtin cmd handling END
 
         if (!cb) {
-            return 'Unknown command.';
-        }
-
-        // register services
-        if (cb.fn instanceof BaseCommandService || typeof cb.fn === 'object' || typeof cb.fn !== 'function') {
-            const serviceName = cb.fn.name
-
-            // initialize activeServices for userId
-            if (!this.activeServices.has(String(userId))) {
-                this.activeServices.set(String(userId), [])
-            }
-
-            if (this.activeServices.get(String(userId))!.map(serv => serv.name).includes(serviceName)) {
-                return `Service ${command} already active.`
-            }
-
-            this.activeServices.get(String(userId))!.push(cb.fn)
+            return 'CommandHandler.handleCommand() Unknown command "' + command + '".';
         }
 
         try {
-            if (typeof cb.fn === 'function') {
+            if (typeof cb.fn === 'function') { // simple command
                 return await cb.fn(ctx);
-                //} else if (typeof cb.fn === 'object'/* && cb.fn instanceof BaseCommandService*/) {
-            } else if (cb.fn) {
-                cb.fn.on("message", async (message: string) => {
+            } else if (cb.fn) { // service exe command
+                //const serviceName = cb.fn.name
+                const serviceName = command
+
+                if (!this.activeServices.has(userId)) {
+                    this.activeServices.set(userId, [])
+                }
+
+                if (this.activeServices.get(userId)!.map(serv => serv.name).includes(serviceName)) {
+                    return `Service ${serviceName} already active.`
+                }
+
+                const serviceInstance = cb.fn.clone(userId, serviceName)
+                this.activeServices.get(userId)!.push(serviceInstance)
+
+                serviceInstance.on("message", async (message: string) => {
                     await this.sendMessageToContext(ctx, message)
                 })
-                cb.fn.on('done', async () => {
-                    await this.handleServiceDone(String(userId), cb.fn.name, ctx)
+                //cb.fn.on("liveLog")
+                serviceInstance.on('done', async () => {
+                    await this.handleServiceDone(userId, serviceInstance.name, ctx)
                 })
-                log.echo("-- Starting service: " + cb.fn.name)
-                cb.fn.run()
+                log.echo("-- Starting service: " + serviceInstance.name)
+                serviceInstance.run()
             }
-        } catch (e) {
-            return JSON.stringify(e, null, 4)
+        } catch (e: any) {
+            log.error("CommandHandler.handleCommand() Command handling error: " + e)
+            return String(e)
         }
     }
 
@@ -174,13 +202,17 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
         }
     }
 
+    private getArgs(text: string): string[] {
+        const splited = text.trim().split(" ")
+        return splited.slice(1)
+    }
 
     public mapHandlersToCommands(): IUICommandSimple[] {
         const cmd = this.callbacks.keys().toArray()
         const desc = this.callbacks.values().map(v => v.description).toArray()
         const args = this.callbacks.values().map(v => v.args).toArray()
 
-        return new Array(cmd.length)
+        const mapped = new Array(cmd.length)
             .fill(0)
             .map((_, i) => ({command: cmd[i], description: desc[i], args: args[i]}))
             .concat([
@@ -209,16 +241,35 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
             ])
             .concat([
                 {
-                    command: DefaultAccountCommandsEnum.CREATE_VARIABLE,
-                    description: "Create variable for user execution context",
-                    args: ["path", "value"]
+                    command: DefaultAccountCommandsEnum.SET_VARIABLE,
+                    description: "Create or update variable for user execution context",
+                    args: ["service", "path", "value"]
                 },
                 {
                     command: DefaultAccountCommandsEnum.REMOVE_VARIABLE,
                     description: "Remove variable for user execution context",
-                    args: ["path"]
+                    args: ["service", "path"]
+                },
+                {
+                    command: DefaultAccountCommandsEnum.GET_VARIABLE,
+                    description: "Get variable for user execution context",
+                    args: ["service", "path"]
                 }
             ])
+            .concat([
+                {
+                    command: DefaultHelpCommandsEnum.HELP_COMMAND,
+                    description: "List all available commands.",
+                    args: []
+                },
+                {
+                    command: DefaultHelpCommandsEnum.CHELP_COMMAND,
+                    description: "Print help for concreet command",
+                    args: ["command"]
+                }
+            ])
+
+        return mapped
     }
 
     public createCommandSequenceGraph() {
@@ -255,30 +306,97 @@ export class CommandHandler<TContext extends BaseUIContext> extends WithInit {
         return graph;
     }
 
-    done() {
-        const graph = this.createCommandSequenceGraph();
+    /// Builtin defaults command execution handlers --- #START --- 
+    private async handleHelpCommand(command: string, _: TContext, __: string, arg: string[]) {
+        switch (command) {
+            case DefaultHelpCommandsEnum.HELP_COMMAND:
+                return this.mapHandlersToCommands().map(v =>
+                    `Command: ${v.command},\
+Description: ${v.description},\
+Args: ${v.args?.join(", ")}\
+`
+                ).join("\n")
+            case DefaultHelpCommandsEnum.CHELP_COMMAND:
+                const cmd = this.callbacks.get(arg[0])
+                if (!cmd) {
+                    return `Command ${arg[0]} not found`
+                }
+                if (cmd.fn instanceof Function) {
+                    return `Command ${arg[0]},\
+Description: ${cmd.description},\
+Args: ${cmd.args?.join(", ")}\
+Next: ${cmd.next?.join(", ") ?? "None"}\
+Prev: ${cmd.prev ?? "None"}\
+`
+                } else {
+                    return `Service ${arg[0]},
+Description: ${cmd.description},
+Config: ${JSON.stringify(cmd.fn.configEntries(), null, 4)},
+Next: ${cmd.next?.join(", ") ?? "None"}\
+Prev: ${cmd.prev ?? "None"}\
+`
+                }
+        }
+        return null
+    }
 
-        printGraph(graph)
+    private async handleAccountCommand(command: string, ctx: TContext, _: string, arg: string[]) {
+        const account = await Account.findById(ctx.manager!.account)
+        if (!account) {
+            return "Account not found."
+        }
+        switch (command) {
+            case DefaultAccountCommandsEnum.SET_VARIABLE:
+                await account!.setModuleData(arg[0], arg[1], arg[2])
 
-        const targets = this.callbacks.keys().toArray()
-        const naighbors = this.callbacks.values().toArray()
-        this.sequenceHandler = new SequenceHandler(
-            Array.from(
-                targets.map((v, i) =>
-                    ({
-                        target: v,
-                        next: naighbors[i].next,
-                        prev: naighbors[i].prev
-                    })
+                return "Variable setted. Current data for context:\n" + JSON.stringify(account.modules.find(m => m.module === arg[0]), null, 4)
+            case DefaultAccountCommandsEnum.REMOVE_VARIABLE:
+                await account.unsetModuleData(arg[0], arg[1])
+
+                return "Variable unsetted"
+            case DefaultAccountCommandsEnum.GET_VARIABLE:
+                return JSON.stringify(
+                    await account.getModuleData(arg[0], arg[1]),
+                    null,
+                    4
                 )
-            )
-        )
-
-        this.setInitialized()
+        }
+        return null
     }
 
-    private getArgs(text: string): string[] {
-        const splited = text.trim().split(" ")
-        return splited.slice(1)
+    private handleSequenceCommand(command: string, _: TContext, userId: string, __: string[]) {
+        let seq_exe_error
+        try {
+            seq_exe_error = this.sequenceHandler!.handle(userId, command)
+        } catch (e: any) {
+            log.error(`CommandHandler.handleCommand() Sequence handling error: ` + e)
+            seq_exe_error = e 
+        }
+        if (seq_exe_error) { // err or default seq comands passed :) im too smart :_)
+            return seq_exe_error
+        }
+        return null
     }
+
+    private async handleServiceCommand(command: string, ctx: TContext, userId: string, arg: string[]) {
+        // stop services
+        if (command === DefaultServiceCommandsEnum.STOP_COMMAND) {
+            if (arg.length == 0) {
+                return "No service name passed"
+            }
+            const serviceName = arg[0]
+            const userServices = this.activeServices.get(userId)!
+            const userServicesNames = userServices.map(s => s.name)
+            if (userServicesNames.includes(serviceName)) {
+                await userServices.find(serv => serv.name === serviceName)!.terminate()
+                userServices.splice(userServicesNames.indexOf(serviceName), 1)
+                return `Service "${serviceName}" stopped.`
+            } else {
+                return `Service ${serviceName} not active.`
+            }
+        }
+        return null
+    }
+
+    /// Builtin defaults command execution handlers --- #END --- 
 }

@@ -1,1 +1,3 @@
-export type Identificable = { id: string | number }
+export interface Identificable<T extends string|number = string> {
+    id: T
+}

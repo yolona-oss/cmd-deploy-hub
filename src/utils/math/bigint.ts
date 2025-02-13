@@ -1,4 +1,6 @@
-export namespace bigint_math {
+export type ReduceToNumber<T extends number | bigint> = T extends number ? T : number;
+
+export namespace BigIntMath {
     export function min(...args: bigint[]){
         if (args.length < 1){ throw 'Min of empty list'; }
         let m = args[0];

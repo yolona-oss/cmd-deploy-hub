@@ -1,28 +1,26 @@
 import { Identificable } from "types/identificable";
-import { IPlatformResponce, TradeOffer, ITargetInfo, IBalance, DEXWallet, IBaseTradeTarget } from "../types";
-import { ITradeOrder } from "../types/trade";
+import { IBalanceList } from "../types/balance";
+import { IAssetInfo, IBaseTradeAsset } from "../types/asset";
+import { IDEXWallet } from "../types/wallet";
+import { ISimpleOffer, IPlatformResponce, IOffer } from "../types/trade";
+import { IClonable } from "types/clonable";
 
-export abstract class BaseTradeApi<TargetType extends IBaseTradeTarget = IBaseTradeTarget, TxRes = never> implements Identificable {
+export abstract class BaseTradeApi<AssetType extends IBaseTradeAsset = IBaseTradeAsset, TxRes = never> implements Identificable, IClonable {
     constructor(public readonly id: string) {}
 
     abstract clone(): any
 
-    /*** @description Get info about trading target */
-    abstract targetInfo(target: TargetType): Promise<ITargetInfo>;
+    abstract assetInfo(asset: AssetType): Promise<IAssetInfo>;
+    abstract balance(traider: Omit<IDEXWallet, "secretKey">): Promise<IBalanceList>;
+    abstract buy(opt: IOffer<AssetType>): Promise<IPlatformResponce<TxRes>>;
+    abstract sell(opt: IOffer<AssetType>): Promise<IPlatformResponce<TxRes>>;
 
-    /*** @description Get balance of passed account */
-    abstract balance(traider: Omit<DEXWallet, "secretKey">): Promise<IBalance>;
-
-    abstract buy(opt: TradeOffer<TargetType>): Promise<IPlatformResponce<TxRes>>;
-
-    abstract sell(opt: TradeOffer<TargetType>): Promise<IPlatformResponce<TxRes>>;
-
-    abstract ordersForTarget(target: TargetType): Promise<{
-        bids: ITradeOrder[]
-        asks: ITradeOrder[]
+    abstract ordersForAsset(asset: AssetType): Promise<{
+        bids: ISimpleOffer[]
+        asks: ISimpleOffer[]
     }>
 
-    abstract createTraider(wallet: Omit<DEXWallet, "secretKey">): Promise<DEXWallet> 
-    abstract addBalance(src: DEXWallet, dst: Omit<DEXWallet, "secretKey">, count: number): Promise<void>
-    abstract createTarget(target: TargetType, supply: number): Promise<void>
+    abstract createTraider(wallet: Omit<IDEXWallet, "secretKey">): Promise<IDEXWallet> 
+    abstract addBalance(src: IDEXWallet, dst: Omit<IDEXWallet, "secretKey">, count: number): Promise<void>
+    abstract createAsset(asset: AssetType, supply: number): Promise<void>
 }

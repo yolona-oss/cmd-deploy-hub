@@ -1,6 +1,6 @@
-import { ExTimeRange } from "./time-range";
+import { ExTimeRangeType } from "./time-range";
 import { LinkedList } from "utils/struct/linked-list";
-import { TradeSide } from "./trade";
+import { TradeSideConst } from "./trade";
 
 export interface ExCurveSimpleNode {
     open: number,
@@ -18,7 +18,7 @@ export interface ExCurveFullNode {
 export interface ExCurveTrade {
     price: number,
     quantity: number,
-    side: typeof TradeSide[keyof typeof TradeSide];
+    side: typeof TradeSideConst[keyof typeof TradeSideConst];
 }
 
 export type ExCurveNodeList<T extends "simple" | "full"> = LinkedList<T extends "simple" ? ExCurveSimpleNode : ExCurveFullNode>

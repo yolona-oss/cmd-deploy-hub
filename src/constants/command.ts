@@ -9,6 +9,12 @@ export const DefaultServiceCommandsEnum = {
 }
 
 export const DefaultAccountCommandsEnum = {
-    CREATE_VARIABLE: "create",
+    SET_VARIABLE: "setv",
+    GET_VARIABLE: "getv",
     REMOVE_VARIABLE: "remove",
+}
+
+export const DefaultHelpCommandsEnum = {
+    HELP_COMMAND: "help",
+    CHELP_COMMAND: "chelp"
 }

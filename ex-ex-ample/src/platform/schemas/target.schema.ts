@@ -21,6 +21,9 @@ export type PlatformTargetDocument = PlatformTargetEntity & Document;
     }
 })
 export class PlatformTargetEntity {
+    @Prop({ type: mongoose.Schema.Types.ObjectId, rel: 'PlatformTraider', required: true })
+    creator_id: mongoose.Schema.Types.ObjectId;
+
     @Prop({ type: String, required: true, unique: true })
     market_id: string;
 
@@ -35,6 +38,13 @@ export class PlatformTargetEntity {
 
     @Prop({ type: Number, required: true })
     circulating: number;
+
+    @Prop({ type: Number, required: true })
+    ipoInitialPrice: number;
 }
 
 export const PlatformTargetSchema = SchemaFactory.createForClass(PlatformTargetEntity);
+
+PlatformTargetSchema.virtual('id').get(function() {
+    return this._id.toHexString();
+})

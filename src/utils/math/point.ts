@@ -1,26 +1,29 @@
-export interface IPoint {
-    x: number
-    y: number
+export interface IPoint<T extends bigint | number = number> {
+    x: T
+    y: T
 }
 
-export interface IPoint2D {
-    x: number
-    y: number
+export interface IPoint2D<T extends bigint | number = number> {
+    x: T
+    y: T
 }
 
-export interface IPoint3D {
-    x: number
-    y: number
-    z: number
+export interface IPoint3D<T extends bigint | number = number> {
+    x: T
+    y: T
+    z: T
 }
 
-export interface IPoint4D {
-    x: number
-    y: number
-    z: number
-    w: number
+export interface IPoint4D<T extends bigint | number = number> {
+    x: T
+    y: T
+    z: T
+    w: T
 }
 
-export class Point2D implements IPoint2D {
-    constructor(public x: number = 0, public y: number = 0) {}
+type zeroT<T extends bigint | number> = T extends bigint ? 0n : 0
+
+export class Point2D<T extends bigint | number = number> implements IPoint2D<T> {
+    constructor(public x: T, public y: T) {
+    }
 }

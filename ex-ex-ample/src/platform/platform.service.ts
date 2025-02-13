@@ -5,7 +5,7 @@ import { PlatformTraiderDocument } from "./schemas/traider.schema";
 import { PlatformTargetDocument } from "./schemas/target.schema";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Model } from "mongoose";
-import { PlatformTradeDocument } from "./schemas/trades.schema";
+import { PlatformTradeDocument, PlatformTradeEntity } from "./schemas/trades.schema";
 import { InjectModel } from "@nestjs/mongoose";
 
 interface ExampleTxResData {
@@ -24,28 +24,114 @@ export class PlatformService {
         @InjectModel('PlatformTarget')
         private readonly targets: Model<PlatformTargetDocument>,
     ) {
-        this.targets.find().then(targets => {
-            targets.forEach(t => {
+        (async () => {
+            const targets = await this.targets.find()
+            for (const trgt of targets) {
                 const ob = new OrderBook()
-                ob.on("change", async (d: any) => await this.onOrderBookChange.bind(this)(d, t.market_id, t.symbol))
-                this.orderBooks.set(t.market_id, ob)
-            })
-        })
+                ob.on("change", async (d: any) => await this.onOrderBookChange.bind(this)(d, trgt.market_id, trgt.symbol))
+                this.orderBooks.set(trgt.market_id, ob)
+
+                const trgtCreator = await this.traiders.findById(trgt.creator_id)
+                const creatorTokenBalance = await this.getTraiderTargets(trgtCreator!.walletData)
+                for (const tokenV of creatorTokenBalance) {
+                    if (tokenV.market_id === trgt.market_id) {
+                        const initIPOSupply = trgt.supply/2
+                        const traidersTargetSupply = await this.getTraidersTargetSupply(trgt.market_id)
+                        const avalibleSupply = initIPOSupply - traidersTargetSupply
+                        if (avalibleSupply > 0) {
+                            ob.addSell(trgtCreator!.walletData, trgt.ipoInitialPrice, avalibleSupply)
+                        }
+                    }
+                }
+            }
+        })()
     }
 
-    async createTarget(market_id: string, mint: string, symbol: string, supply: number) {
-        await this.targets.create({ market_id, mint, symbol, supply, circulating: 0 })
+    async tmp() {
+        const traiders = await this.traiders.find()
+        for (const traider of traiders) {
+            console.log(traider.walletData, await this.getTraiderTargets(traider.walletData))
+        }
+    }
+
+    async dropAll() {
+        await this.traiders.deleteMany({})
+        await this.targets.deleteMany({})
+        await this.trades.deleteMany({})
+    }
+
+    async createTarget(market_id: string, mint: string, symbol: string, supply: number, initialPrice: number) {
+        if (await this.targets.findOne({market_id})) {
+            throw new BadRequestException(`Target ${market_id} already exists`)
+        }
+
+        const ipo = await this.traiders.create({
+            balance: initialPrice * supply,
+            walletData: {
+                publicKey: "IPO_" + crypto.randomUUID(),
+                secretKey: crypto.randomUUID()
+            },
+            isIPO: true
+        })
+
+        const t = await this.targets.create({ market_id, mint, symbol, supply, circulating: 0, creator_id: ipo.id, ipoInitialPrice: initialPrice })
 
         const ob = new OrderBook
         ob.on("change", async (d: any) => await this.onOrderBookChange.bind(this)(d, market_id, symbol))
-
         this.orderBooks.set(market_id, ob)
+
+        //await this.placeBuy({
+        //    tx: {
+        //        price: initialPrice,
+        //        quantity: supply
+        //    },
+        //    target: t,
+        //    traider: {
+        //        wallet: ipo.walletData
+        //    }
+        //}, true)
+        //await this.placeSell({
+        //    tx: {
+        //        price: initialPrice,
+        //        quantity: supply/2
+        //    },
+        //    target: t,
+        //    traider: {
+        //        wallet: ipo.walletData
+        //    }
+        //})
+
+        await this.trades.create({
+            initiator_id: ipo.id,
+            target_id: t.id,
+            value: {
+                price: initialPrice,
+                quantity: supply
+            },
+            side: TradeSide.Buy,
+            result: { success: true, signature: "IPO_"+Math.random().toString(8) },
+            time: Date.now()
+        })
+
+        await this.trades.create({
+            initiator_id: ipo.id,
+            target_id: t.id,
+            value: {
+                price: initialPrice,
+                quantity: supply/2
+            },
+            side: TradeSide.Sell,
+            result: { success: true, signature: "IPO_"+Math.random().toString(8) },
+            time: Date.now()
+        })
+
+        ob.addSell(ipo.walletData, initialPrice, supply/2)
     }
 
     async removeTarget(market_id: string) {
         const res = await this.targets.deleteMany({market_id})
         if (res.deletedCount === 0) {
-            throw new BadRequestException("Target not found")
+            throw new BadRequestException(`Target ${market_id} not found`)
         }
         this.orderBooks.delete(market_id)
     }
@@ -70,9 +156,14 @@ export class PlatformService {
     }
 
     async getTraderCommitedTrades(wallet: { publicKey: string }) {
-        const id = await this.traiders.findOne({'walletData.publicKey': wallet.publicKey})
+        const traider = await this.traiders.findOne({'walletData.publicKey': wallet.publicKey})
+
+        if (!traider) {
+            throw new BadRequestException("Traider " + wallet.publicKey + " not exists")
+        }
+
         return await this.trades.find({
-            initiator: id
+            initiator_id: traider.id
         })
     }
 
@@ -92,7 +183,10 @@ export class PlatformService {
         return traider.balance
     }
 
-    async getTraiders() {
+    async getTraiders(exclude_ipo = false) {
+        if (exclude_ipo) {
+            return await this.traiders.find({isIPO: false})
+        }
         return await this.traiders.find()
     }
 
@@ -100,38 +194,52 @@ export class PlatformService {
         return await this.targets.find()
     }
 
-    async getTargetHolders(target: string) {
+    async getTargetHolders(market_id: string) {
         const traiders = await this.getTraiders()
 
-        let i = 0
+        const holders: { traider_id: number, quantity: number }[] = []
         for (const traider of traiders) {
             const targets = await this.getTraiderTargets(traider.walletData)
-            for (const _target of targets) {
-                if (_target.target === target) {
-                    i++
+            for (const target of targets) {
+                if (target.market_id === market_id && target.quantity > 0) {
+                    holders.push({ traider_id: traider.id, quantity: target.quantity })
                     break
                 }
             }
         }
-        return i
+        return holders
+    }
+
+    async getTraidersTargetSupply(market_id: string) {
+        const traiders = await this.getTraiders(true)
+        let quantity = 0
+        for (const traider of traiders) {
+            const targets = await this.getTraiderTargets(traider.walletData)
+            for (const target of targets) {
+                if (target.market_id === market_id) {
+                    quantity += target.quantity
+                }
+            }
+        }
+        return quantity
     }
 
     async getTraiderTargets(wallet: { publicKey: string }): Promise<{
-        target: string,
+        market_id: string,
         quantity: number
     }[]> {
         const traider = await this.traiders.findOne({'walletData.publicKey': wallet.publicKey})
         if (!traider) {
-            return []
+            throw new BadRequestException("Traider " + wallet.publicKey + " not exists")
         }
-        return await this.equalizeTrades(await this.trades.find({initiator: traider.id}))
+        return await this.equalizeTrades(traider.id)
     }
 
-    private async equalizeTrades(trades: Trade<ExampleTxResData>[]): Promise<{
-        target: string,
+    private async equalizeTrades(intiator_id: string): Promise<{
+        market_id: string,
         quantity: number
     }[]> {
-        const mergePrices = (trades: Trade<ExampleTxResData>[]) => {
+        const mergePrices = (trades: PlatformTradeEntity[]) => {
             const priceMerged: {price: number, quantity: number}[] = []
             for (const trade of trades) {
                 let entry = priceMerged.find(item => item.price === Number(trade.value.price))
@@ -145,16 +253,26 @@ export class PlatformService {
         }
 
         const allTargets = await this.getTargets()
-        let res: any = []
+        let res: {market_id: string, quantity: number}[] = []
         for (const target_l of allTargets) {
-            const buys = trades.filter(t => t.side === TradeSide.Buy && t.target.market_id === target_l.market_id && t.result.success)
-            const sells = trades.filter(t => t.side === TradeSide.Sell && t.target.market_id === target_l.market_id && t.result.success)
+            const buys = await this.trades.find({
+                initiator_id: intiator_id,
+                side: TradeSide.Buy,
+                target_id: target_l.id,
+                'result.success': true
+            })
+            const sells = await this.trades.find({
+                initiator_id: intiator_id,
+                side: TradeSide.Sell,
+                target_id: target_l.id,
+                'result.success': true
+            })
 
             const buy = mergePrices(buys)
             const sell = mergePrices(sells)
 
             let entry = {
-                target: target_l,
+                market_id: target_l.market_id,
                 quantity: 0
             }
             for (let i = 0; i < buy.length; i++) {
@@ -174,11 +292,11 @@ export class PlatformService {
     }
 
     async placeSell(trade: TradeOffer) {
-        const target = trade.target
+        const t_market_id = trade.market_id
 
         try {
-            if (!this.orderBooks.has(target.market_id)) {
-                throw new BadRequestException(`Target ${target.market_id} not exists`)
+            if (!this.orderBooks.has(t_market_id)) {
+                throw new BadRequestException(`Target ${t_market_id} not exists`)
             }
 
             const traider = await this.traiders.findOne({'walletData.publicKey': trade.traider.wallet.publicKey})
@@ -187,62 +305,76 @@ export class PlatformService {
             }
 
             const traiderTarget = (await this.getTraiderTargets(trade.traider.wallet))
-                .find(t => t.target === trade.target.market_id)
+            .find(t => t.market_id === t_market_id)
 
             if (traiderTarget && traiderTarget.quantity < trade.tx.quantity) {
-                throw new BadRequestException(`Not enough targets: "${trade.target}" in traider wallet`)
+                throw new BadRequestException(`Not enough targets: "${t_market_id}" in traider wallet`)
             }
 
-            this.orderBooks.get(target.market_id)!.addSell(
+            this.orderBooks.get(t_market_id)!.addSell(
                 trade.traider.wallet,
-                Number(trade.tx.price),
-                Number(trade.tx.quantity)
+                trade.tx.price,
+                trade.tx.quantity
             )
 
             return {
+                signature: crypto.randomUUID(),
                 success: true
             }
         } catch (e) {
             return {
+                signature: crypto.randomUUID(),
                 success: false,
                 error: e
             }
         }
     }
 
-    async placeBuy(trade: TradeOffer) {
+    async placeBuy(trade: TradeOffer, isIPO = false) {
         const balance = await this.getTraiderBalance(trade.traider.wallet)
-        const target = trade.target
+        const t_market_id = trade.market_id
+
+        const targetData = await this.getTargetInfo(t_market_id)
+
+        if (!targetData) {
+            throw new BadRequestException(`Target ${t_market_id} not exists`)
+        }
+
+        const avalibleQuantity = await this.avalibleTargetSupply(t_market_id)
+        if (!isIPO && trade.tx.quantity > avalibleQuantity) {
+            throw new BadRequestException(`Target ${t_market_id} not enough supply`)
+        }
 
         if (balance && balance >= trade.tx.price * trade.tx.quantity) {
-            console.log(this.orderBooks)
-            if (!this.orderBooks.has(target.market_id)) {
-                throw new BadRequestException(`Target ${trade.target} not exists`)
+            if (!this.orderBooks.has(t_market_id)) {
+                throw new BadRequestException(`Target ${t_market_id} not exists`)
             }
 
-            this.orderBooks.get(target.market_id)!.addBuy(trade.traider.wallet, Number(trade.tx.price), Number(trade.tx.quantity))
+            this.orderBooks.get(t_market_id)!.addBuy(trade.traider.wallet, Number(trade.tx.price), Number(trade.tx.quantity))
             return {
+                signature: crypto.randomUUID(),
                 success: true
             }
         }
         return {
+            signature: crypto.randomUUID(),
             success: false,
             error: "Not enough balance or user not exists or target not exists"
         }
     }
 
     async addBalance(wallet: { publicKey: string }, count: number) {
-        await this.traiders.updateOne({'walletData.publicKey': wallet.publicKey}, {$inc: {balance: count}})
+        await this.traiders.updateOne({'walletData.publicKey': wallet.publicKey}, {$inc: {balance: Number(count)}})
     }
 
-    async tradesOverTarget(target: string) {
-        const _target = await this.targets.findOne({market_id: target})
+    async tradesOverTarget(market_id: string) {
+        const target = await this.targets.findOne({market_id})
 
-        if (!_target) {
-            throw new BadRequestException("Target not found")
+        if (!target) {
+            throw new BadRequestException(`Target ${market_id} not found`)
         }
 
-        return await this.trades.find({target: _target.id})
+        return await this.trades.find({target_id: target.id})
     }
 
     async uncommitedTradesOverTarget(target: string) {
@@ -265,10 +397,29 @@ export class PlatformService {
         }
     }
 
-    private async mapTradesInfo(target: string, range: Range): Promise<{
+    public async avalibleTargetSupply(market_id: string) {
+        const target = await this.targets.findOne({market_id})
+
+        if (!target) {
+            throw new BadRequestException(`Target ${market_id} not found`)
+        }
+
+        const traiders = await this.traiders.find()
+        let supply = target.supply
+
+        for (const traider of traiders) {
+            const holders = await this.getTraiderTargets(traider.walletData)
+            const quantity = holders.find(h => h.market_id === target.market_id)?.quantity || 0
+            supply -= quantity
+        }
+
+        return supply
+    }
+
+    private async mapTradesInfo(market_id: string, range: Range): Promise<{
         trades: {
             time: number,
-            initiator: string,
+            initiator_id: string,
             tx: ITradeTxType<number>,
             side: TradeSideType,
             txData: never,
@@ -286,14 +437,14 @@ export class PlatformService {
             return time >= range.offset && time <= range.limit
         }
 
-        const tot = await this.tradesOverTarget(target)
+        const tot = await this.tradesOverTarget(market_id)
         if (!tot) {
             return res
         }
 
         res.trades = tot.filter(t => isInRange(t.time)).map(t => ({
             time: t.time,
-            initiator: t.initiator,
+            initiator_id: t.initiator_id,
             tx: {
                 price: t.value.price,
                 quantity: t.value.quantity
@@ -306,20 +457,20 @@ export class PlatformService {
         return res
     }
 
-    public async getTargetInfo(target: string): Promise<ITargetInfo | undefined> {
-        const targetObj = await this.targets.findOne({market_id: target})
+    public async getTargetInfo(market_id: string): Promise<ITargetInfo | undefined> {
+        const targetObj = await this.targets.findOne({market_id})
 
         if (!targetObj) {
-            throw new BadRequestException("Target not found")
+            throw new BadRequestException(`Target ${market_id} not found`)
         }
 
         return {
-            MC: await this.getTargetPrice(target) * targetObj.circulating,
+            MC: await this.getTargetPrice(market_id) * targetObj.circulating,
             Volume: targetObj.circulating,
-            CurPrice: await this.getTargetPrice(target),
+            CurPrice: await this.getTargetPrice(market_id),
             CurSupply: targetObj.supply,
-            Holders: await this.getTargetHolders(target),
-            trades: async (range: Range) => this.mapTradesInfo(target, range),
+            Holders: (await this.getTargetHolders(market_id)).length,
+            trades: async (range: Range) => this.mapTradesInfo(market_id, range),
         }
     }
 
@@ -327,23 +478,29 @@ export class PlatformService {
         side: TradeSideType,
         fromWallet: { publicKey: string },
         price: number,
-        diff: number
+        diff: number // qunantity of tokens trades
     }, target: string, symbol: string) {
+
+        console.log(`On: ${target}, From: ${data.fromWallet.publicKey}, Price: ${data.price}, Diff: ${data.diff}, Side: ${data.side}`)
+
+        const tradeVolume = data.diff * data.price
+
         if (data.side === TradeSide.Buy) {
-            await this.addBalance(data.fromWallet, data.diff * data.price)
+            await this.addBalance(data.fromWallet, -tradeVolume)
         } else {
-            await this.addBalance(data.fromWallet, -(data.diff * data.price))
+            await this.addBalance(data.fromWallet, tradeVolume)
         }
 
         // TODO: this is not the best way to update the target circulating supply
         //       just increases in each commited trade:)
-        await this.targets.updateOne({market_id: target}, {$inc: {circulating: data.diff}})
+        //await this.targets.updateOne({market_id: target}, {$inc: {circulating: data.diff}})
 
         const target_id = (await this.targets.findOne({market_id: target}))!.id
+        const initiator = await this.traiders.findOne({'walletData.publicKey': data.fromWallet.publicKey})
         await this.trades.create({
             time: Date.now(),
             target: target_id,
-            initiator: (await this.traiders.findOne({'walletData.publicKey': data.fromWallet.publicKey}))!.id,
+            initiator_id: initiator!.id,
             side: data.side,
             value: {
                 price: data.price,

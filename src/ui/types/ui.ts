@@ -12,4 +12,6 @@ export interface IUI<CtxType extends BaseUIContext> extends IRunnable, WithInit 
 
     lock(lockManager: LockManager): boolean
     unlock(lockManager: LockManager): boolean
+
+    terminate(): Promise<void>
 }

@@ -30,6 +30,9 @@ export class PlatformTraiderEntity {
 
     @Prop({type: Number, required: true})
     balance: number;
+
+    @Prop({type: Boolean, default: false})
+    isIPO: boolean
 }
 
 export const PlatformTraiderSchema = SchemaFactory.createForClass(PlatformTraiderEntity);

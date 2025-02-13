@@ -3,7 +3,8 @@ import {
     Get,
     Post,
     Param,
-    Body
+    Body,
+    BadRequestException
 } from '@nestjs/common';
 import { PlatformService } from './platform.service';
 import { TradeOffer } from './types';
@@ -30,8 +31,8 @@ export class PlatformController {
     }
 
     @Get('traider-targets/:wallet')
-    async getTraiderTargets(@Param('wallet') wallet: { publicKey: string }) {
-        return await this.service.getTraiderTargets(wallet)
+    async getTraiderTargets(@Param('wallet') publicKey: string) {
+        return await this.service.getTraiderTargets({publicKey})
     }
 
     @Get('traider-balance/:wallet')
@@ -80,8 +81,8 @@ export class PlatformController {
     }
 
     @Post('create-target')
-    async createTarget(@Body() target: { market_id: string, mint: string, symbol: string, supply: number }) {
-        return await this.service.createTarget(target.market_id, target.mint, target.symbol, target.supply)
+    async createTarget(@Body() target: { market_id: string, mint: string, symbol: string, supply: number, initialPrice: number }) {
+        return await this.service.createTarget(target.market_id, target.mint, target.symbol, target.supply, target.initialPrice)
     }
 
     @Post('remove-target')
@@ -96,6 +97,19 @@ export class PlatformController {
 
     @Post('dev-update-balance')
     async updateBalance(@Body() balance: { dst: { publicKey: string }, amount: number }) {
+        if (typeof balance.amount !== "number") {
+            throw new BadRequestException("Amount must be number")
+        }
         return await this.service.addBalance(balance.dst, balance.amount)
+    }
+
+    @Get('drop-all')
+    async dropAll() {
+        return await this.service.dropAll()
+    }
+
+    @Get('tmp')
+    async tmp() {
+        return await this.service.tmp()
     }
 }

@@ -15,7 +15,7 @@ export interface ITradeTxResult<TxResType> {
 }
 
 export interface Trade<TxResType = any> {
-    target: ITarget;
+    market_id: string;
     value: ITradeTxType;
     side: TradeSideType,
     result: ITradeTxResult<TxResType>
@@ -29,7 +29,7 @@ export interface TradeOffer {
             secretKey: string
         }
     },
-    target: ITarget,
+    market_id: string,
     tx: ITradeTxType,
     slippage?: number,
     fee?: any,
@@ -44,7 +44,7 @@ export interface ITargetInfo<TxData = never> {
     trades: (range: Range) => Promise<{
         trades: {
             time: number,
-            initiator: string, // pubkey or something or non dex platform :D
+            initiator_id: string,
             tx: ITradeTxType,
             side: TradeSideType,
             txData: TxData

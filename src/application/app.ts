@@ -28,16 +28,30 @@ export abstract class Application<CtxType extends BaseUIContext> extends WithIni
         super()
         this.ui = ui
         this.id = name
-        process.once("beforeExit", async () => await this.terminate());
-        process.on("SIGINT", () => this.terminate());
-        process.on("SIGTERM", () => this.terminate());
+        process.on("SIGINT", async () => {
+            await this.terminate()
+        });
+        process.on("SIGTERM", async () => {
+            await this.terminate()
+        });
     }
 
     isRunning(): boolean {
         return this.active
     }
 
-    abstract Initialize(): Promise<void>
+    async Initialize(): Promise<void> {
+        try {
+            log.echo("Application::setup() checking lock...")
+            await this.lockApp()
+
+            const plzkillme = await getConfig()
+            await MongoConnect(plzkillme.server.database.mongoose.connectionUri, plzkillme.server.database.options)
+        } catch (e: any) {
+            log.error("App preinitialization failed:", e);
+            process.exit(-1)
+        }
+    }
 
     private _prevErrorHandler?: (error: Error) => void
 
@@ -56,46 +70,7 @@ export abstract class Application<CtxType extends BaseUIContext> extends WithIni
         this.lockManager.deleteLockFile(LockManager.createLockFileName(hash))
     }
 
-    private async isPreviousRunning() {
-        const pid = this.lockManager.getLockFileData(this.id)
-        if (typeof pid !== "string") {
-            return false
-        }
-        return (await find("pid", pid)).length > 0
-    }
-
-    private async lockApp() {
-        const createLock = () => {
-            this.lockManager.deleteLockFile(LockManager.createLockFileName(this.id))
-            this.lockManager.createLockFile(this.id, process.pid.toString())
-        }
-
-        const lock = this.lockManager.createLockFile(this.id, process.pid.toString())
-        if (!lock) {
-            if (await this.isPreviousRunning()) {
-                throw new Error("Application.lockApp() application with spame id already running")
-            }
-        }
-        createLock()
-    }
-
-    private async setup() {
-        try {
-            log.echo("Application::setup() checking lock...")
-            await this.lockApp()
-
-            const plzkillme = await getConfig()
-            await MongoConnect(plzkillme.server.database.mongoose.connectionUri)
-        } catch (e: any) {
-            log.error("App preinitialization failed:", e);
-            process.exit(-1)
-        }
-    }
-
     async run() {
-        await this.setup()
-        await this.Initialize()
-
         if (!this.isInitialized()) {
             log.error("Application. Incoreect implementations of Initialize(). Not setInitialized() called.")
             process.exit(-1)
@@ -128,4 +103,28 @@ export abstract class Application<CtxType extends BaseUIContext> extends WithIni
         await mongoose.disconnect()
         this.active = false
     }
+
+    private async isPreviousRunning() {
+        const pid = this.lockManager.getLockFileData(this.id)
+        if (typeof pid !== "string") {
+            return false
+        }
+        return (await find("pid", pid)).length > 0
+    }
+
+    private async lockApp() {
+        const createLock = () => {
+            this.lockManager.deleteLockFile(LockManager.createLockFileName(this.id))
+            this.lockManager.createLockFile(this.id, process.pid.toString())
+        }
+
+        const lock = this.lockManager.createLockFile(this.id, process.pid.toString())
+        if (!lock) {
+            if (await this.isPreviousRunning()) {
+                throw new Error("Application.lockApp() application with spame id already running")
+            }
+        }
+        createLock()
+    }
+
 }

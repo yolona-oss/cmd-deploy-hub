@@ -48,6 +48,7 @@ const ConfigSign = object({
         database: object({
             mongoose: object({
                 connectionUri: string(),
+                connectionOptions: object(),
             }),
             path: string(),
         }),
@@ -82,7 +83,10 @@ if (!fs.existsSync(main_config_path)) {
 
             database: {
                 mongoose: {
-                    connectionUri: "mongodb://localhost:27017/"
+                    connectionUri: "mongodb://localhost:27017/",
+                    connectionOptions: {
+                        dbName: "cmd-deploy-hub-v1"
+                    }
                 },
                 path: "./storage",
             },

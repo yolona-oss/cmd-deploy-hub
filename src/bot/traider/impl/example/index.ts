@@ -8,37 +8,32 @@ import { ExampleTradeApi } from "./api";
 import { curveToTxList } from "../../helpers/curve-creator";
 import { Bezier } from "utils/math/curve/bezier";
 import { randomizeWithScatter } from "utils/random";
-import { ITradeTargetValue } from "../../types/trade";
-import { DiagnosticMessage } from "typescript";
-import { DEXWallet } from "bot/traider/types";
-import { ExExTargetType } from "./target-type";
+import { ITradeSupply } from "../../types/trade";
+import { ExExAssetType } from "./asset-type";
 
+import { MAIN_TOKEN_NAME } from "./api";
 
 export async function example() {
     let wallets: any[] = [
         { publicKey: "0x0" },
         { publicKey: "0x1" },
-        { publicKey: "0x2" },
-        { publicKey: "0x3" },
-        { publicKey: "0x4" },
-        { publicKey: "0x5" },
-        { publicKey: "0x6" },
-        { publicKey: "0x7" },
-        { publicKey: "0x8" },
-        { publicKey: "0x9" },
+        //{ publicKey: "0x2" },
+        //{ publicKey: "0x3" },
+        //{ publicKey: "0x4" },
+        //{ publicKey: "0x5" },
+        //{ publicKey: "0x6" },
+        //{ publicKey: "0x7" },
+        //{ publicKey: "0x8" },
+        //{ publicKey: "0x9" },
     ]
 
-    const TradersTarget: ExExTargetType = {
+    const TradersAsset: ExExAssetType = {
         market_id: "exex-coin-market-id",
         mint: "0x0f0f0f0f0f0f0f0f",
         symbol: "ex-ex"
     }
     const api = new ExampleTradeApi()
 
-    const r = await api.sell({ traider: { wallet: {publicKey: "0x1", secretKey: "0x0"} }, target: TradersTarget, tx: {price: 20, quantity: 100} })
-    console.log(r)
-
-    return
     for (let i = 0; i < wallets.length; i++) {
         let w = wallets[i]
         let res: any
@@ -54,20 +49,19 @@ export async function example() {
             await api.addBalance({ publicKey: "", secretKey: "" }, w, 1_0_000)
         } else {
             const balance = await api.balance(w)
-            if (balance < 1_0_000) {
-                await api.addBalance({ publicKey: "", secretKey: "" }, w, 1_0_000 - balance)
+            if (balance.find(b => b.currency === MAIN_TOKEN_NAME)!.balance < 1_000) {
+                await api.addBalance({ publicKey: "", secretKey: "" }, w, 1_0_000 - balance.find(b => b.currency === MAIN_TOKEN_NAME)!.balance)
             }
         }
     }
 
     try {
-        await api.createTarget(TradersTarget, 1_000_000)
+        await api.createAsset(TradersAsset, 1_000_000)
     } catch (e) {
-        console.log("target already exists:")
-        console.log(await api.targetInfo(TradersTarget))
+        log.echo(await api.assetInfo(TradersAsset))
     }
 
-    const mtc = new ExampleMTC(TradersTarget, wallets)
+    const mtc = new ExampleMTC(TradersAsset, wallets)
     mtc.run()
     log.echo("MasterTraderCtrl initialized")
 
@@ -75,8 +69,8 @@ export async function example() {
     //const to = BigInt(2000000000)
     log.echo("Generating curve...")
 
-    const target = mtc.target
-    log.echo(`Target: ${target}`)
+    const asset = mtc.tradeAsset
+    log.echo(`Asset: ${asset}`)
 
     const perSlaveTx = 10
     const tradableSlavesCount = mtc.slavesCount()
@@ -97,13 +91,16 @@ export async function example() {
     ], perSlaveTx*tradableSlavesCount)
     const generatedTx = curveToTxList(
         priceCurve,
-        volumeCurve,
-        1, 1
+        volumeCurve.map(v => ({y: Math.floor(v.y), x: v.x})),
+        {
+            pricePerc: 1,
+            volumePerc: 0
+        },
     )
     log.echo(`Generated ${generatedTx.length} txs`)
 
     log.echo(`Assigning ${generatedTx.length} txs to ${tradableSlavesCount} slaves...`)
-    const tx_chunks = new Array<ITradeTargetValue<number>[]>()
+    const tx_chunks = new Array<ITradeSupply<number>[]>()
     // NOTE: maybe should randomize tx count per slave?
     for (let i = 0; i < generatedTx.length-perSlaveTx; i += perSlaveTx) {
         log.echo(`${i}:${i + perSlaveTx}`)
@@ -116,17 +113,17 @@ export async function example() {
     }
 
     log.echo(`Pushing txs to slaves...`)
-    mtc.applyToSlaves(async (slave: SlaveTraderCtrl<ExampleTradeApi, ExExTargetType, any>, i) => {
+    mtc.applyToSlaves(async (slave: SlaveTraderCtrl<ExampleTradeApi, ExExAssetType, any>, i) => {
         for (const tx of tx_chunks[i]) {
-            slave.pushBoth({
-                trade: {
-                    target,
-                    tx
-                },
-                setup: {
-                    delay: randomizeWithScatter(0, 5) as number
-                }
-            })
+            //slave.pushBoth({
+            //    trade: {
+            //        asset,
+            //        tx
+            //    },
+            //    setup: {
+            //        delay: randomizeWithScatter(0, 5) as number
+            //    }
+            //})
         }
     })
     log.echo("Txs pushed")

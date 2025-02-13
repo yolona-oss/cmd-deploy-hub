@@ -1,4 +1,4 @@
-import { IPlatformResponce, TradeOffer, ITargetInfo, IBalance } from 'bot/traider/types';
+import { IPlatformResponce, TradeOffer, ITargetInfo, IBalanceList } from 'bot/traider/types';
 import { BaseTradeApi } from '../base-trade-api';
 
 import { TransactionMode } from './types';
@@ -41,7 +41,7 @@ export class PumpFunTradeApi extends BaseTradeApi<WalletData, any> {
         super("pump-fun")
     }
 
-    async targetInfo(target: string): Promise<ITargetInfo> {
+    async assetInfo(target: string): Promise<ITargetInfo> {
         const coinData = await getCoinData(target);
 
         return {
@@ -79,7 +79,7 @@ export class PumpFunTradeApi extends BaseTradeApi<WalletData, any> {
     async buy(opt: TradeOffer<WalletData>): Promise<IPlatformResponce<any>> {
         let sign = ""
         try {
-            sign = <string>(await pumpFunBuy(TransactionMode.Execution, opt.traider.secretKey, opt.target, opt.tx.price*opt.tx.quantity, opt.fee, opt.slippage))
+            sign = <string>(await pumpFunBuy(TransactionMode.Execution, opt.traider.secretKey, opt.target, opt.value.price*opt.value.quantity, opt.fee, opt.slippage))
         } catch(e) {
             console.log(e)
             return {
@@ -99,7 +99,7 @@ export class PumpFunTradeApi extends BaseTradeApi<WalletData, any> {
     async sell(opt: TradeOffer<WalletData>): Promise<IPlatformResponce<any>> {
         let sign = ""
         try {
-            sign = <string>(await pumpFunSell(TransactionMode.Execution, opt.traider.secretKey, opt.target, opt.tx.price*opt.tx.quantity, opt.fee, opt.slippage))
+            sign = <string>(await pumpFunSell(TransactionMode.Execution, opt.traider.secretKey, opt.target, opt.value.price*opt.value.quantity, opt.fee, opt.slippage))
         } catch (e) {
             console.log(e)
             return {

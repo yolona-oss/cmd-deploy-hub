@@ -1,3 +1,3 @@
 export interface IClonable {
-    clone(): any;
+    clone(...args: any[]): any;
 }

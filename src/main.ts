@@ -2,24 +2,31 @@ import { AppCmdhub } from 'cmdhub'
 import { CommandHandler } from 'services/command-handler'
 import { BaseCommandService } from 'services/command-service'
 import { TgContext } from 'ui/telegram'
-import { genRandomNumberBetween } from 'utils/random'
+import { genRandomNumberBetweenWithScatter } from 'utils/random'
 import { sleep } from 'utils/time'
 
 import log from 'utils/logger'
 import { example } from 'bot/traider/impl/example'
 
-class ServiceOne extends BaseCommandService<string> {
-    constructor() {
-        super("blob-service")
+class ServiceOne extends BaseCommandService<{}, string> {
+    constructor(userId: string, name: string = 'blob') {
+        super(userId, {}, name)
+    }
+
+    clone(userId: string, newName?: string): BaseCommandService<{}, string> {
+        return new ServiceOne(userId, newName)
     }
 
     async run() {
         await super.run()
 
         let i = 3
-        while (true && super.isRunning()) {
+        while (true) {
+            if (!super.isRunning()) {
+                break
+            }
             this.emit("message", "blob" + i)
-            i = i + genRandomNumberBetween(-199, 320)
+            i = i + genRandomNumberBetweenWithScatter<number>(-199, 320, 30, 2)
             await sleep(1000)
             if (i > 1000) {
                 await this.terminate()
@@ -53,7 +60,7 @@ function setup(handler: CommandHandler<TgContext>) {
         command: "blob",
         description: "Fuck",
     },
-        new ServiceOne()
+        new ServiceOne("")
     )
 
     handler.register({
@@ -76,18 +83,19 @@ process.on('unhandledRejection', (err, promise) => {
 })
 
 async function bootstrap() {
-    await example()
-    //let handler = new CommandHandler<TgContext>()
-    //setup(handler)
-    //handler.done()
-    //
-    //const app = new AppCmdhub("cli", handler)
-    //
-    //app.setErrorInterceptor((error: Error) => {
-    //    log.error(error)
-    //})
-    //app.Initialize()
-    //app.run()
+    //await example()
+    let handler = new CommandHandler<TgContext>()
+    setup(handler)
+    handler.done()
+
+    const app = new AppCmdhub("cli", handler)
+
+    app.setErrorInterceptor(function(error: Error) {
+        log.error(error)
+    })
+    await app.Initialize()
+
+    await app.run()
 }
 
 bootstrap()

@@ -1,6 +1,6 @@
 import { LinkedList } from "utils/struct/linked-list";
 import { ExCurveNodeList, ExCurveTrade } from "./types/ex-curve";
-import { ExTimeRange, isExDateInRange } from "./types/time-range";
+import { ExTimeRangeType, isExDateInRange } from "./types/time-range";
 import { TimeRange } from "utils/time";
 
 export type ExCurveTradePoint = ExCurveTrade&{time:number}
@@ -9,7 +9,7 @@ export type ExCurveTradePoints = ExCurveTradePoint[]
 export class ExCurve {
     protected trades: ExCurveTradePoints
 
-    static tradesInCut(trades: ExCurveTradePoints, start: number, range: ExTimeRange) {
+    static tradesInCut(trades: ExCurveTradePoints, start: number, range: ExTimeRangeType) {
         return trades.filter(v => isExDateInRange(start, v.time, range))
     }
 
@@ -36,7 +36,7 @@ export class ExCurve {
         return Object.assign({}, this.trades)
     }
 
-    public mapToSimpleCurve(range: ExTimeRange, cut?: TimeRange): ExCurveNodeList<"simple"> {
+    public mapToSimpleCurve(range: ExTimeRangeType, cut?: TimeRange): ExCurveNodeList<"simple"> {
         this.trades = ExCurve.sortTrades(this.trades)
         const list: ExCurveNodeList<"simple"> = new LinkedList()
         const trades = cut ?
@@ -65,7 +65,7 @@ export class ExCurve {
         return list
     }
 
-    public mapToFullCurve(range: ExTimeRange, cut?: TimeRange): ExCurveNodeList<"full"> {
+    public mapToFullCurve(range: ExTimeRangeType, cut?: TimeRange): ExCurveNodeList<"full"> {
         this.trades = ExCurve.sortTrades(this.trades)
         const list: ExCurveNodeList<"full"> = new LinkedList()
         const trades = cut ?

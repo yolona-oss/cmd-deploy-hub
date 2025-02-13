@@ -33,7 +33,7 @@ export let actions = (() => {
         await Manager.create({
             userId: userId,
             name: member.user.first_name + " " + member.user.last_name,
-            avatar: (await FilesWrapper.getDefaultAvatar()).id,
+            avatar: (await FilesWrapper.getDefaultAvatar())!.id,
             useGreeting: true
         })
 

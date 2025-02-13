@@ -3,10 +3,10 @@ import mongoose from 'mongoose';
 
 import log from 'utils/logger'
 
-export const MongoConnect = async (uri: string): Promise<void> => {
+export const MongoConnect = async (uri: string, options: any): Promise<void> => {
     try {
         log.echo("Connecting to mongoose...")
-        await mongoose.connect(uri);
+        await mongoose.connect(uri, options);
         log.echo("DB connected.")
     } catch (error) {
         log.error('Error connecting to MongoDB: ', error)

@@ -1,4 +1,4 @@
-export interface DEXWallet {
+export interface IDEXWallet {
     publicKey: string;
     secretKey: string;
 }

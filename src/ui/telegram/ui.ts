@@ -150,7 +150,7 @@ export class TelegramUI extends WithInit implements IUI<TgContext> {
                     name: "Admin",
                     userId: Config.bot.admin_id,
                     online: false,
-                    avatar: (await FilesWrapper.getDefaultAvatar()).id,
+                    avatar: (await FilesWrapper.getDefaultAvatar())!.id,
                     useGreeting: true
                 })
             }
@@ -187,7 +187,9 @@ export class TelegramUI extends WithInit implements IUI<TgContext> {
             if (!manager.useGreeting) { continue } // skip
             await this.notifyManagers(manager.userId, "Service going offline", stickers.verySad)
         }
+        await this.commandHandler.stop()
         this.tgBotInstance.stop();
+        log.echo(" -- Telegram ui stopped");
     }
 
     private async notifyManagers(id: string|number, msg: string, stiker?: string) {

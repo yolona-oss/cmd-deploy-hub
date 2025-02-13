@@ -33,11 +33,13 @@ log.error = function(...arg: any[]) {
     log("ERROR:", ...arg)
 
     console.error(logTime(), '[EE]:', chalk.red(...arg))
+    //console.error(logTime(), '[EE]:', ...arg)
 }
 
 log.warn = function(...arg: any[]) {
     log("WARNING:", ...arg)
     console.warn(logTime(), '[WW]:', chalk.yellow(...arg))
+    //console.warn(logTime(), '[WW]:', ...arg)
 }
 
 log.echo = function(...arg: any[]) {

@@ -1,2 +1,3 @@
 - create live log: just html + js that poll from server
 - integrate user context state value to set availability to execute concreet commands
+- create associative mongo collection for handling default images

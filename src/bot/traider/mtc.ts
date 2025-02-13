@@ -3,55 +3,26 @@ import { ISTCMetrics } from "./stc-metric";
 import { IRunnable } from "types/runnable";
 import { AbstractState } from "types/state";
 import { BaseTradeApi } from "./trade-api/base-trade-api";
-import { Trade } from "./types";
+import { ITradeCommit, IOffer } from "./types/trade";
 import { BotDrivenCurve } from "./bot-driven-curve";
 import { Identificable } from "types/identificable";
 import log from "utils/logger";
 import { sleep } from "utils/time";
 import { IClonable } from "types/clonable";
-import { IBaseTradeTarget } from "./types/trade-target";
-
-export abstract class MTCContext {
-    constructor(
-        private state: MTCState
-    )
-    { }
-
-    public transitionTo(state: MTCState) {
-        this.state = state
-        this.state.setContext(this)
-    }
-
-    public setForceStopSlaves(forceStopSlaves: boolean) {
-        this.state.setForceStopSlaves(forceStopSlaves)
-    }
-
-    public async stopSlave(slave: SlaveTraderCtrl<any, any, any>) {
-        await slave.stop(this.state.isForceStop())
-    }
-}
-
-export abstract class MTCState extends AbstractState<MTCContext> {
-    private forceStopSlaves: boolean = false
-
-    setForceStopSlaves(forceStopSlaves: boolean) {
-        this.forceStopSlaves = forceStopSlaves
-    }
-
-    isForceStop() {
-        return this.forceStopSlaves
-    }
-}
+import { IBaseTradeAsset } from "./types/asset";
+import { TradeSideType } from "./types/trade";
+import { IDEXWallet } from "./types/wallet";
+import { Sequalizer } from "utils/sequalizer";
 
 type LoopFnType<
-        TradeApi extends BaseTradeApi<TargetType, ExPlatformRes> = BaseTradeApi<any, any>,
-        TargetType extends IBaseTradeTarget = IBaseTradeTarget,
+        TradeApi extends BaseTradeApi<AssetType, ExPlatformRes> = BaseTradeApi<any, any>,
+        AssetType extends IBaseTradeAsset = IBaseTradeAsset,
         ExPlatformRes = any
-> = (this: MasterTraderCtrl<TradeApi, TargetType, ExPlatformRes>, slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>[]) => Promise<void>
+> = (this: MasterTraderCtrl<TradeApi, AssetType, ExPlatformRes>, slave: SlaveTraderCtrl<TradeApi, AssetType, ExPlatformRes>[]) => Promise<void>
 
 export abstract class MasterTraderCtrl<
-        TradeApi extends BaseTradeApi<TargetType, ExPlatformRes> = any & BaseTradeApi,
-        TargetType extends IBaseTradeTarget = IBaseTradeTarget,
+        TradeApi extends BaseTradeApi<AssetType, ExPlatformRes> = any & BaseTradeApi,
+        AssetType extends IBaseTradeAsset = IBaseTradeAsset,
         ExPlatformRes = any
     >
     implements
@@ -60,7 +31,8 @@ export abstract class MasterTraderCtrl<
         IClonable
 {
     private _isRunning: boolean = false
-    protected loopFn: LoopFnType<TradeApi, TargetType, ExPlatformRes>
+    protected loopFn: LoopFnType<TradeApi, AssetType, ExPlatformRes>
+    protected sharedSequalizer: Sequalizer
 
     protected botDrivenCurve
     private curve_id
@@ -68,45 +40,38 @@ export abstract class MasterTraderCtrl<
     private static flag: boolean = true
 
     constructor(
-        public readonly target: TargetType,
-        protected slaves: Array<SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>>,
+        public readonly tradeAsset: AssetType,
+        protected slaves: Array<SlaveTraderCtrl<TradeApi, AssetType, ExPlatformRes>>,
         protected tradeApi: TradeApi,
-        protected ctx: MTCContext,
-        public readonly id: string = "mtc_main"
+        public readonly id: string = "id_mtc_main"
     ) {
         MasterTraderCtrl.flag = true
+        this.sharedSequalizer = new Sequalizer()
 
         for (const s of this.slaves) {
-            if (!s.isInitialized()) {
-                throw new Error("MasterTraderCtrl::constructor() slave not initialized!")
-            }
-            s.onsell = (trade: Trade<TargetType, ExPlatformRes>) => this.onSell(trade)
-            s.onbuy = (trade: Trade<TargetType, ExPlatformRes>) => this.onBuy(trade)
+            s.onsell = (trade: ITradeCommit<AssetType, ExPlatformRes>) => this.onSell(trade)
+            s.onbuy = (trade: ITradeCommit<AssetType, ExPlatformRes>) => this.onBuy(trade)
+            s.setSequalizer(this.sharedSequalizer)
         }
 
-        this.curve_id = `Id${this.id}_Api${this.tradeApi.id}_Target${this.target.market_id}_curve`
+        this.curve_id = `Id${this.id}_Api${this.tradeApi.id}_Asset${this.tradeAsset.market_id}_curve`
         this.botDrivenCurve = BotDrivenCurve.loadFromFile(this.curve_id)
 
         this.loopFn = async function() {
             if (MasterTraderCtrl.flag) {
-                log.echo("MasterTraderCtrl::loopFn() not redefined. Using default implementation with no functionality.")
+                //log.echo("MasterTraderCtrl::loopFn() not redefined. Using default implementation with no functionality.")
                 MasterTraderCtrl.flag = false
             }
         }
-
     }
 
-    abstract clone(): MasterTraderCtrl<TradeApi, TargetType, ExPlatformRes>
-
-    public setLoopFn(loopFn: LoopFnType<TradeApi, TargetType, ExPlatformRes>) {
-        this.loopFn = loopFn
+    public isRunning(): boolean {
+        return this._isRunning
     }
 
-    public changeState(state: MTCState) {
-        this.ctx.transitionTo(state)
-    }
+    abstract clone(newId: string, newAsset: AssetType, newSlaves: SlaveTraderCtrl<TradeApi, AssetType, ExPlatformRes>[]): MasterTraderCtrl<TradeApi, AssetType, ExPlatformRes>
 
-    private onSell(trade: Trade<TargetType, ExPlatformRes>) {
+    private onSell(trade: ITradeCommit<AssetType, ExPlatformRes>) {
         this.botDrivenCurve.addTrade({
             price: trade.value.price,
             quantity: trade.value.quantity,
@@ -115,7 +80,7 @@ export abstract class MasterTraderCtrl<
         })
     }
 
-    private onBuy(trade: Trade<TargetType, ExPlatformRes>) {
+    private onBuy(trade: ITradeCommit<AssetType, ExPlatformRes>) {
         this.botDrivenCurve.addTrade({
             price: trade.value.price,
             quantity: trade.value.quantity,
@@ -124,19 +89,20 @@ export abstract class MasterTraderCtrl<
         })
     }
 
-    addSlave(slave: SlaveTraderCtrl<TradeApi, TargetType,  ExPlatformRes>) {
-        slave.onsell = (trade: Trade<TargetType, ExPlatformRes>) => this.onSell(trade)
-        slave.onbuy = (trade: Trade<TargetType, ExPlatformRes>) => this.onBuy(trade)
+    get Slaves() {
+        return this.slaves
+    }
+
+    addSlave(slave: SlaveTraderCtrl<TradeApi, AssetType,  ExPlatformRes>) {
+        slave.onsell = (trade: ITradeCommit<AssetType, ExPlatformRes>) => this.onSell(trade)
+        slave.onbuy = (trade: ITradeCommit<AssetType, ExPlatformRes>) => this.onBuy(trade)
+        slave.setSequalizer(this.sharedSequalizer)
         this.slaves.push(slave)
     }
 
-    /**
-    * Filter slaves and assign to this.slaves
-    * Returns removed and kept slaves
-    */
-    async filterSlaves(fn: (slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>) => Promise<boolean>): Promise<{
-        removed: Array<SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>>,
-        kept: Array<SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>>
+    async filterSlaves(fn: (slave: SlaveTraderCtrl<TradeApi, AssetType, ExPlatformRes>) => Promise<boolean>): Promise<{
+        removedCount: number,
+        kept: Array<SlaveTraderCtrl<TradeApi, AssetType, ExPlatformRes>>
     }> {
         let removed = []
         let kept = []
@@ -148,60 +114,97 @@ export abstract class MasterTraderCtrl<
             }
         }
 
-        this.slaves = kept
+        for (const toRemove of removed) {
+            await this.removeSlave(toRemove.Wallet)
+        }
 
         return {
-            removed: removed,
+            removedCount: removed.length,
             kept: kept
         }
     }
 
-    removeSlave(slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>) {
-        slave.onsell = () => {}
-        slave.onbuy = () => {}
-        this.slaves.splice(this.slaves.indexOf(slave), 1)
+    public async removeSlave(wallet: IDEXWallet) {
+        const toRemove = this.slaves.find(s => s.Wallet.publicKey === wallet.publicKey && s.Wallet.secretKey === wallet.secretKey)
+        if (toRemove) {
+            const searchId = toRemove.id
+            const { removed } = this.sharedSequalizer.filterQueue(
+                t => t.id.includes(searchId))
+            log.echo(`MasterTraderCtrl::removeSlave() removed ${removed.length} trades from queue`)
+            await this.sharedSequalizer.waitTasksWithIdMatch(searchId)
+            log.echo(`MasterTraderCtrl::removeSlave() all tasks awaited for slave ${searchId}`)
+
+            this.slaves = this.slaves.filter(s => s.id !== searchId)
+            log.echo(`MasterTraderCtrl::removeSlave() removed slave ${searchId}`)
+        }
     }
 
-    public async applyToSlaves(fn: (slave: SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes>, index: number) => Promise<void>) {
+    public async applyToSlaves(fn: (slave: SlaveTraderCtrl<TradeApi, AssetType, ExPlatformRes>, index: number) => Promise<void>) {
         for (let i = 0; i < this.slaves.length; i++) {
             await fn(this.slaves[i], i)
         }
     }
 
-    public isRunning(): boolean {
-        return this._isRunning
+    public async loadOfferSequenceToSlave(
+        offers: (IOffer&{side: TradeSideType})[],
+        slaveSearch: (s: SlaveTraderCtrl<TradeApi, AssetType, ExPlatformRes>) => boolean
+    ): Promise<{
+        loaded: boolean,
+        error?: string
+    }> {
+        let slave = this.slaves.find(slaveSearch)
+        if (!slave) {
+            throw new Error("MasterTraderCtrl::loadOfferSequenceToSlave() slave not found")
+        }
+
+        const canPerform = await slave.canPerformTradeSequence(offers)
+        if (!canPerform) {
+            return {
+                loaded: false,
+                error: "SlaveTraderCtrl::loadOfferSequenceToSlave() slave can't perform trade sequence"
+            }
+        }
+
+        //slave.pushOffer(offers)
+
+        return {
+            loaded: true
+        }
     }
 
-    public async targetInfo() {
-        return await this.tradeApi.targetInfo(this.target)
+    public async assetInfo() {
+        return await this.tradeApi.assetInfo(this.tradeAsset)
     }
 
     public slavesCount() {
         return this.slaves.length
     }
 
-    protected getRandomSlave(): SlaveTraderCtrl<TradeApi, TargetType, ExPlatformRes> {
-        return this.slaves[Math.floor(Math.random() * this.slaves.length)]
-    }
-
     async run() {
         this._isRunning = true
+        this.sharedSequalizer.run()
+
+        const interval = 100
 
         while (this._isRunning) {
-            await sleep(1000)
-        }
+            const start = performance.now()
+            
+            sleep(interval)
 
-        for (const slave of this.slaves) {
-            await this.ctx.stopSlave(slave)
+            const end = performance.now()
+            const delta = end - start
+
+            if (delta < interval) {
+                await sleep(interval - delta)
+            }
         }
     }
 
     async terminate() {
-        this.botDrivenCurve.saveToFile(this.curve_id)
-        //for (const slave of this.slaves) {
-        //    await this.ctx.stopSlave(slave)
-        //}
         this._isRunning = false
+        this.botDrivenCurve.saveToFile(this.curve_id)
+        await this.sharedSequalizer.waitAll()
+        await this.sharedSequalizer.terminate()
     }
 
     public agregateMetrics(slaveMetrics: Array<ISTCMetrics>,

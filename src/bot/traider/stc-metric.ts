@@ -1,12 +1,13 @@
-import { Trade } from "./types"
-import { IBaseTradeTarget } from "./types/trade-target"
+import { ITradeCommit } from "./types/trade"
+import { IBaseTradeAsset } from "./types/asset"
+import { WithExecTime } from "types/with-exec-time"
 
-export interface ISTCMetrics<TradeTarget extends IBaseTradeTarget = IBaseTradeTarget, PlatformResData = never> {
-    Trades: Array<Trade<TradeTarget, PlatformResData>&{exec_time: number}>,
-    SuccessTrades: Array<Trade<TradeTarget, PlatformResData>&{exec_time: number}>,
-    SellTrades: Array<Trade<TradeTarget, PlatformResData>&{exec_time: number}>,
-    BuyTrades: Array<Trade<TradeTarget, PlatformResData>&{exec_time: number}>,
-    ErrorTrades: Array<Trade<TradeTarget, PlatformResData>&{exec_time: number}>,
+export interface ISTCMetrics<TradeAsset extends IBaseTradeAsset = IBaseTradeAsset, PlatformResData = never> {
+    Trades: Array<ITradeCommit<TradeAsset, PlatformResData>&WithExecTime>,
+    SuccessTrades: Array<ITradeCommit<TradeAsset, PlatformResData>&WithExecTime>,
+    SellTrades: Array<ITradeCommit<TradeAsset, PlatformResData>&WithExecTime>,
+    BuyTrades: Array<ITradeCommit<TradeAsset, PlatformResData>&WithExecTime>,
+    ErrorTrades: Array<ITradeCommit<TradeAsset, PlatformResData>&WithExecTime>,
     ErrorRate: number,
     BuyMeanPrice: number,
     SellMeanPrice: number,
@@ -18,15 +19,15 @@ export interface ISTCMetrics<TradeTarget extends IBaseTradeTarget = IBaseTradeTa
 }
 
 // TODO: remove trades array and save data exacly in the metrics
-export class STCMetrics<TradeTarget extends IBaseTradeTarget = IBaseTradeTarget, PlatformResData = any> {
-    protected trades: Array<Trade<TradeTarget, PlatformResData>&{exec_time: number}> = []
+export class STCMetrics<TradeAsset extends IBaseTradeAsset = IBaseTradeAsset, PlatformResData = any> {
+    protected trades: Array<ITradeCommit<TradeAsset, PlatformResData>&WithExecTime> = []
     protected droped = 0
 
     public reset() {
         this.trades = []
     }
 
-    public addTrade(trade: Trade<TradeTarget, PlatformResData>&{exec_time: number}) {
+    public addTrade(trade: ITradeCommit<TradeAsset, PlatformResData>&WithExecTime) {
         this.trades.push(trade)
     }
 
@@ -86,7 +87,7 @@ export class STCMetrics<TradeTarget extends IBaseTradeTarget = IBaseTradeTarget,
         this.droped += i
     }
 
-    public agregate(): ISTCMetrics<TradeTarget, PlatformResData> {
+    public agregate(): ISTCMetrics<TradeAsset, PlatformResData> {
         return {
             Trades: this.trades,
             SuccessTrades: this.SuccessTrades(),

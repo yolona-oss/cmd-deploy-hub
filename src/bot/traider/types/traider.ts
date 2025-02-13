@@ -1,8 +1,8 @@
-import { DEXWallet } from './wallet'
+import { IDEXWallet } from './wallet'
 
 // TODO: create interface for centralized exchanges
 export interface ITraider {
-    wallet: DEXWallet
+    wallet: IDEXWallet
 }
 
 export interface ITraderCreateDTO {

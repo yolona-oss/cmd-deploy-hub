@@ -7,5 +7,8 @@ import { DbModelsEnum } from 'db/models-enum'
 
 export const Manager = mongoose.model<IManager>(DbModelsEnum.Managers, ManagerSchema)
 export const File = mongoose.model<IFile>(DbModelsEnum.Files, FileSchema)
-export const Account = mongoose.model<IAccount>(DbModelsEnum.Accounts, AccountSchema)
 export { FilesWrapper } from 'db/file-schema-wrapper'
+
+import { AccountModelType } from './schemes/account'
+
+export const Account = mongoose.model<IAccount, AccountModelType>(DbModelsEnum.Accounts, AccountSchema)

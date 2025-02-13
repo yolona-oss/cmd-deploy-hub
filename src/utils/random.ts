@@ -17,11 +17,12 @@ export function genRandomNumberBetween<T extends number | bigint>(min: T, max: T
     }
 }
 
-export function genRandomNumberBetweenWithScatter(
-    min: number | bigint,
-    max: number | bigint,
-    scatter: number | bigint
-): number | bigint {
+export function genRandomNumberBetweenWithScatter<T extends number|bigint = number>(
+    min: T,
+    max: T,
+    scatter: T,
+    fixed = 2
+): T {
     if (typeof min !== typeof max || typeof min !== typeof scatter) {
         throw new Error("min, max, and scatter must be of the same type (Number or BigInt)");
     }
@@ -37,7 +38,7 @@ export function genRandomNumberBetweenWithScatter(
         const adjustedMax = Math.min(scatterMax, Number.MAX_SAFE_INTEGER);
 
         // Generate a random number between the adjusted min and max
-        return Math.floor(Math.random() * (adjustedMax - adjustedMin + 1)) + adjustedMin;
+        return Number((Math.floor(Math.random() * (adjustedMax - adjustedMin + 1)) + adjustedMin).toFixed(fixed)) as T;
     } else if (typeof min === 'bigint') {
         // Handle BigInt type
         const scatterMin = min - (scatter as bigint);
@@ -51,24 +52,24 @@ export function genRandomNumberBetweenWithScatter(
         // Generate a random BigInt between the adjusted min and max
         const range = adjustedMax - adjustedMin + 1n;
         const randomBits = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
-        return adjustedMin + (randomBits % range);
+        return adjustedMin + (randomBits % range) as T;
     } else {
         throw new Error("Unsupported type for min, max, or scatter");
     }
 }
 
-export function randomizeWithScatter(value: number|bigint, scatter: number|bigint) {
-    return genRandomNumberBetweenWithScatter(value, value, scatter)
+export function randomizeWithScatter<T extends number|bigint = number>(value: T, scatter: T, fixed = 2) {
+    return genRandomNumberBetweenWithScatter<T>(value, value, scatter, fixed)
 }
 
-export function randomizeWithPercentScatter(value: number|bigint, percent: number) {
+export function randomizeWithPercentScatter<T extends number|bigint = number>(value: T, percent: number, fixed = 2) {
     let scatter: number|bigint = 0
     if (typeof value === "bigint") {
         scatter = value * (BigInt(percent) / BigInt(100))
     } else if (typeof value === "number") {
         scatter = value * (percent / 100)
     }
-    return genRandomNumberBetweenWithScatter(value, value, scatter)
+    return genRandomNumberBetweenWithScatter<T>(value, value, scatter, fixed)
 }
 
 //export class SimpleGenerator {
